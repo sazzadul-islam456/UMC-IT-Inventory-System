@@ -1,16 +1,17 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { useNavigate } from 'react-router';
+import { useNavigate, useLocation } from 'react-router';
+import AdminSidebar from '../../components/AdminSidebar.jsx';
 
 const Dashboard = () => {
-    const { user, logout } = useAuth();
+    const { user } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
 
     const loggedInUserId = user?._id;
 
     const [activeMenu, setActiveMenu] = useState('Dashboard');
-    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     // User Statistics
     const [userStats, setUserStats] = useState({
@@ -94,11 +95,25 @@ const Dashboard = () => {
     const menuItems = [
         { name: 'Dashboard', icon: '▦' },
         { name: 'User Management', icon: '♙' },
+        { name: 'Stock Inventory', icon: '📦' },
         { name: 'Asset Management', icon: '▣' },
         { name: 'Departments', icon: '▤' },
         { name: 'Reports', icon: '▥' },
         { name: 'Settings', icon: '⚙' }
     ];
+
+    // DASHBOARD MENU URL SYNC - Search: DASHBOARD MENU URL SYNC
+    // Restore the selected menu when the Dashboard URL is opened or refreshed.
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const requestedMenu = params.get('menu');
+
+        const isValidMenu = menuItems.some(
+            (item) => item.name === requestedMenu
+        );
+
+        setActiveMenu(isValidMenu ? requestedMenu : 'Dashboard');
+    }, [location.search]);
 
     // Get Authentication Token
     const getToken = () => {
@@ -193,18 +208,6 @@ const Dashboard = () => {
         fetchUserStats();
         fetchAllUsers();
     }, []);
-
-    // Logout
-    const handleLogout = () => {
-        const confirmLogout = window.confirm(
-            'Are you sure you want to logout?'
-        );
-
-        if (!confirmLogout) return;
-
-        logout();
-        navigate('/login', { replace: true });
-    };
 
     // Create New User
     const handleCreateUser = async (e) => {
@@ -574,10 +577,28 @@ const Dashboard = () => {
         URL.revokeObjectURL(url);
     };
 
-    // Navigation
+    // DASHBOARD NAVIGATION - Search: DASHBOARD NAVIGATION
     const handleNavigation = (menuName) => {
+
+        // Stock Inventory has its own separate page.
+        if (menuName === 'Stock Inventory') {
+            navigate('/admin/stock');
+            return;
+        }
+
+        // Departments has its own separate page.
+        if (menuName === 'Departments') {
+            navigate('/admin/departments');
+            return;
+        }
+
+        // Keep other Dashboard modules on this page.
         setActiveMenu(menuName);
-        setSidebarOpen(false);
+
+        navigate(
+            `${location.pathname}?menu=${encodeURIComponent(menuName)}`,
+            { replace: true }
+        );
     };
 
     // Reusable Stat Card
@@ -610,102 +631,8 @@ const Dashboard = () => {
     return (
         <div className="min-h-screen bg-slate-100 flex">
 
-            {/* Mobile Sidebar Overlay */}
-            {sidebarOpen && (
-                <div
-                    className="fixed inset-0 bg-slate-950/50 z-30 lg:hidden"
-                    onClick={() => setSidebarOpen(false)}
-                />
-            )}
-
-            {/* Sidebar */}
-            <aside
-                className={`fixed inset-y-0 left-0 z-40 w-72 bg-slate-950 text-white flex flex-col transition-transform duration-300 lg:translate-x-0 lg:w-64 ${
-                    sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-                }`}
-            >
-                {/* Logo */}
-                <div className="px-6 py-7 border-b border-slate-800 flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold tracking-wide">
-                            UMC <span className="text-blue-400">IT</span>
-                        </h1>
-
-                        <p className="text-xs text-slate-400 mt-2">
-                            Asset Management System
-                        </p>
-                    </div>
-
-                    <button
-                        onClick={() => setSidebarOpen(false)}
-                        className="lg:hidden text-slate-400 hover:text-white text-2xl"
-                    >
-                        ×
-                    </button>
-                </div>
-
-                {/* Navigation */}
-                <div className="px-5 py-6">
-                    <p className="text-xs uppercase tracking-widest text-slate-500 mb-4">
-                        Main Menu
-                    </p>
-
-                    <nav className="space-y-2">
-                        {menuItems.map((item) => (
-                            <button
-                                key={item.name}
-                                onClick={() => handleNavigation(item.name)}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition ${
-                                    activeMenu === item.name
-                                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30'
-                                        : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                                }`}
-                            >
-                                <span className="text-xl w-6 text-center">
-                                    {item.icon}
-                                </span>
-
-                                {item.name}
-
-                                {item.name === 'User Management' && (
-                                    <span className="ml-auto bg-slate-800 text-slate-300 text-xs px-2 py-1 rounded-lg">
-                                        {userStats.totalUsers}
-                                    </span>
-                                )}
-                            </button>
-                        ))}
-                    </nav>
-                </div>
-
-                {/* Sidebar Bottom */}
-                <div className="mt-auto p-5 border-t border-slate-800">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="w-11 h-11 rounded-full bg-blue-600 flex items-center justify-center font-bold text-lg uppercase">
-                            {user?.name?.charAt(0) || 'A'}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold truncate">
-                                {user?.name || 'Administrator'}
-                            </p>
-
-                            <p className="text-xs text-slate-400 truncate">
-                                {user?.email || 'Full Access'}
-                            </p>
-                        </div>
-
-                        <span className="w-2.5 h-2.5 bg-emerald-400 rounded-full shrink-0" />
-                    </div>
-
-                    <button
-                        onClick={handleLogout}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white text-sm font-semibold transition"
-                    >
-                        <span>↪</span>
-                        Logout
-                    </button>
-                </div>
-            </aside>
+            {/* REUSABLE ADMIN SIDEBAR */}
+            <AdminSidebar />
 
             {/* Main Content */}
             <main className="flex-1 lg:ml-64 min-w-0">
@@ -714,13 +641,6 @@ const Dashboard = () => {
                 <header className="bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between sticky top-0 z-20">
 
                     <div className="flex items-center gap-3 min-w-0">
-                        <button
-                            onClick={() => setSidebarOpen(true)}
-                            className="lg:hidden w-10 h-10 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 flex items-center justify-center text-xl"
-                        >
-                            ☰
-                        </button>
-
                         <div className="min-w-0">
                             <p className="text-[10px] sm:text-xs text-slate-400 font-semibold tracking-wide">
                                 UNITED MEDICAL COLLEGE / ADMIN
