@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import Asset from '../models/Asset.js';
 import StockItem from '../models/StockItem.js';
+import StockUnit from '../models/StockUnit.js';
 import Department from '../models/Department.js';
 import Room from '../models/Room.js';
 
@@ -12,13 +13,14 @@ import Room from '../models/Room.js';
 
 // ASSIGN ASSETS
 export const assignAssets = async (req, res) => {
+    let session;
+
     try {
         const {
             stockItemId,
             departmentId,
             roomId,
             quantity,
-            serialNumbers = [],
             description = ''
         } = req.body;
 
@@ -33,7 +35,7 @@ export const assignAssets = async (req, res) => {
         // QUANTITY VALIDATION
         const assignQuantity = Number(quantity);
 
-        if (!Number.isInteger(assignQuantity) || assignQuantity < 1) {
+        if (!Number.isSafeInteger(assignQuantity) || assignQuantity < 1) {
             return res.status(400).json({
                 success: false,
                 message: 'Quantity must be a positive whole number'
@@ -52,179 +54,198 @@ export const assignAssets = async (req, res) => {
             });
         }
 
-        // SERIAL NUMBER VALIDATION
-        if (!Array.isArray(serialNumbers)) {
+        // DESCRIPTION VALIDATION
+        if (typeof description !== 'string') {
             return res.status(400).json({
                 success: false,
-                message: 'Serial numbers must be an array'
+                message: 'Description must be text'
             });
         }
 
-        if (serialNumbers.length !== 0 && serialNumbers.length !== assignQuantity) {
-            return res.status(400).json({
-                success: false,
-                message: 'Provide one serial number for each asset, or leave them empty'
-            });
-        }
+        // START MONGODB TRANSACTION
+        session = await mongoose.startSession();
 
-        const cleanedSerialNumbers = serialNumbers.map(serial =>
-            typeof serial === 'string' ? serial.trim() : ''
-        );
+        let updatedStock;
+        let createdAssets;
 
-        if (cleanedSerialNumbers.some(serial => !serial)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Serial numbers cannot be empty'
-            });
-        }
+        await session.withTransaction(
+            async () => {
 
-        if (new Set(cleanedSerialNumbers).size !== cleanedSerialNumbers.length) {
-            return res.status(400).json({
-                success: false,
-                message: 'Duplicate serial numbers are not allowed'
-            });
-        }
+                // CHECK STOCK ITEM
+                const stockItem = await StockItem.findOne({
+                    _id: stockItemId,
+                    isActive: true
+                }).session(session);
 
-        // CHECK STOCK ITEM
-        const stockItem = await StockItem.findOne({
-            _id: stockItemId,
-            isActive: true
-        });
-
-        if (!stockItem) {
-            return res.status(404).json({
-                success: false,
-                message: 'Stock item not found or inactive'
-            });
-        }
-
-        // CHECK DEPARTMENT
-        const department = await Department.findOne({
-            _id: departmentId,
-            isActive: true
-        });
-
-        if (!department) {
-            return res.status(404).json({
-                success: false,
-                message: 'Department not found or inactive'
-            });
-        }
-
-        // CHECK ROOM
-        const room = await Room.findOne({
-            _id: roomId,
-            department: departmentId,
-            isActive: true
-        });
-
-        if (!room) {
-            return res.status(404).json({
-                success: false,
-                message: 'Room not found, inactive or does not belong to this department'
-            });
-        }
-
-        // CHECK AVAILABLE QUANTITY
-        if (stockItem.availableQuantity < assignQuantity) {
-            return res.status(400).json({
-                success: false,
-                message: `Only ${stockItem.availableQuantity} items are available`
-            });
-        }
-
-        // CHECK EXISTING SERIAL NUMBERS
-        if (cleanedSerialNumbers.length > 0) {
-            const existingSerial = await Asset.findOne({
-                serialNumber: { $in: cleanedSerialNumbers }
-            });
-
-            if (existingSerial) {
-                return res.status(409).json({
-                    success: false,
-                    message: 'One or more serial numbers already exist'
-                });
-            }
-        }
-
-        // PREPARE INDIVIDUAL ASSETS
-        const assets = Array.from({ length: assignQuantity }, (_, index) => ({
-            stockItem: stockItem._id,
-
-            assetId: `UMC-AST-${randomUUID()}`,
-
-            ...(cleanedSerialNumbers[index]
-                ? { serialNumber: cleanedSerialNumbers[index] }
-                : {}),
-
-            name: stockItem.name,
-            brand: stockItem.brand || '',
-            model: stockItem.model || '',
-            sku: stockItem.sku || '',
-
-            department: department._id,
-            room: room._id,
-
-            status: 'Assigned',
-            assignedDate: new Date(),
-            description: description.trim()
-        }));
-
-        // ATOMIC STOCK QUANTITY UPDATE
-        // Prevents assigning more than available stock.
-        const updatedStock = await StockItem.findOneAndUpdate(
-            {
-                _id: stockItemId,
-                isActive: true,
-                availableQuantity: { $gte: assignQuantity }
-            },
-            {
-                $inc: {
-                    availableQuantity: -assignQuantity,
-                    assignedQuantity: assignQuantity
+                if (!stockItem) {
+                    const error = new Error('Stock item not found or inactive');
+                    error.statusCode = 404;
+                    throw error;
                 }
-            },
-            {
-                new: true,
-                runValidators: true
-            }
-        );
 
-        if (!updatedStock) {
-            return res.status(409).json({
-                success: false,
-                message: 'Stock availability changed. Please refresh and try again.'
-            });
-        }
+                // CHECK DEPARTMENT
+                const department = await Department.findOne({
+                    _id: departmentId,
+                    isActive: true
+                }).session(session);
 
-        // CREATE ASSETS
-        try {
-            const createdAssets = await Asset.insertMany(assets, {
-                ordered: true
-            });
+                if (!department) {
+                    const error = new Error('Department not found or inactive');
+                    error.statusCode = 404;
+                    throw error;
+                }
 
-            return res.status(201).json({
-                success: true,
-                message: `${assignQuantity} asset(s) assigned successfully`,
-                assignedQuantity: assignQuantity,
-                stock: updatedStock,
-                assets: createdAssets
-            });
+                // CHECK ROOM
+                const room = await Room.findOne({
+                    _id: roomId,
+                    department: departmentId,
+                    isActive: true
+                }).session(session);
 
-        } catch (assetError) {
-            // ROLLBACK STOCK QUANTITY IF ASSET CREATION FAILS
-            await StockItem.updateOne(
-                { _id: stockItemId },
-                {
-                    $inc: {
-                        availableQuantity: assignQuantity,
-                        assignedQuantity: -assignQuantity
+                if (!room) {
+                    const error = new Error(
+                        'Room not found, inactive or does not belong to this department'
+                    );
+                    error.statusCode = 404;
+                    throw error;
+                }
+
+                // CHECK AVAILABLE STOCK QUANTITY
+                if (stockItem.availableQuantity < assignQuantity) {
+                    const error = new Error(
+                        `Only ${stockItem.availableQuantity} items are available`
+                    );
+                    error.statusCode = 400;
+                    throw error;
+                }
+
+                // FIND INDIVIDUAL AVAILABLE STOCK UNITS
+                const availableUnits = await StockUnit.find({
+                    stockItem: stockItemId,
+                    status: 'Available',
+                    asset: null
+                })
+                    .sort({ createdAt: 1 })
+                    .limit(assignQuantity)
+                    .session(session);
+
+                // CHECK INDIVIDUAL UNIT AVAILABILITY
+                if (availableUnits.length < assignQuantity) {
+                    const error = new Error(
+                        `Only ${availableUnits.length} individually tracked devices are available. Please receive or register the remaining devices first.`
+                    );
+                    error.statusCode = 400;
+                    throw error;
+                }
+
+                // PREPARE INDIVIDUAL ASSETS
+                const assets = availableUnits.map(unit => ({
+                    stockItem: stockItem._id,
+
+                    // USE STOCK UNIT CODE AS ASSET ID
+                    assetId: unit.unitCode,
+
+                    // COPY MANUFACTURER SERIAL NUMBER
+                    ...(unit.serialNumber
+                        ? { serialNumber: unit.serialNumber }
+                        : {}),
+
+                    name: stockItem.name,
+                    brand: stockItem.brand || '',
+                    model: stockItem.model || '',
+                    sku: stockItem.sku || '',
+
+                    department: department._id,
+                    room: room._id,
+
+                    status: 'Assigned',
+                    assignedDate: new Date(),
+                    description: description.trim()
+                }));
+
+                // ATOMIC STOCK QUANTITY UPDATE
+                updatedStock = await StockItem.findOneAndUpdate(
+                    {
+                        _id: stockItemId,
+                        isActive: true,
+                        availableQuantity: { $gte: assignQuantity }
+                    },
+                    {
+                        $inc: {
+                            availableQuantity: -assignQuantity,
+                            assignedQuantity: assignQuantity
+                        }
+                    },
+                    {
+                        new: true,
+                        runValidators: true,
+                        session
                     }
-                }
-            );
+                );
 
-            throw assetError;
-        }
+                if (!updatedStock) {
+                    const error = new Error(
+                        'Stock availability changed. Please refresh and try again.'
+                    );
+                    error.statusCode = 409;
+                    throw error;
+                }
+
+                // CREATE ASSETS
+                createdAssets = await Asset.insertMany(
+                    assets,
+                    {
+                        ordered: true,
+                        session
+                    }
+                );
+
+                // UPDATE INDIVIDUAL STOCK UNIT STATUS
+                const unitUpdates = availableUnits.map((unit, index) => ({
+                    updateOne: {
+                        filter: {
+                            _id: unit._id,
+                            status: 'Available',
+                            asset: null
+                        },
+                        update: {
+                            $set: {
+                                status: 'Assigned',
+                                asset: createdAssets[index]._id
+                            }
+                        }
+                    }
+                }));
+
+                const unitUpdateResult = await StockUnit.bulkWrite(
+                    unitUpdates,
+                    { session }
+                );
+
+                // VERIFY ALL STOCK UNITS WERE UPDATED
+                if (unitUpdateResult.matchedCount !== assignQuantity) {
+                    const error = new Error(
+                        'Some stock units could not be updated. Please try again.'
+                    );
+                    error.statusCode = 409;
+                    throw error;
+                }
+            },
+            {
+                readConcern: { level: 'snapshot' },
+                writeConcern: { w: 'majority' },
+                readPreference: 'primary'
+            }
+        );
+
+        // TRANSACTION SUCCESS RESPONSE
+        return res.status(201).json({
+            success: true,
+            message: `${assignQuantity} asset(s) assigned successfully`,
+            assignedQuantity: assignQuantity,
+            stock: updatedStock,
+            assets: createdAssets
+        });
 
     } catch (error) {
         console.error('ASSIGN ASSETS ERROR:', error);
@@ -236,11 +257,31 @@ export const assignAssets = async (req, res) => {
             });
         }
 
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({
+                success: false,
+                message: error.message
+            });
+        }
+
         return res.status(500).json({
             success: false,
             message: 'Failed to assign assets',
             error: error.message
         });
+
+    } finally {
+        // SAFELY END TRANSACTION SESSION
+        if (session) {
+            try {
+                await session.endSession();
+            } catch (sessionError) {
+                console.error(
+                    'ASSET TRANSACTION SESSION CLEANUP ERROR:',
+                    sessionError
+                );
+            }
+        }
     }
 };
 

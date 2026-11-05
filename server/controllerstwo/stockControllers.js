@@ -1,9 +1,15 @@
 
 import mongoose from 'mongoose';
+import { randomUUID } from 'node:crypto';
+
 import StockItem from '../models/StockItem.js';
+import StockUnit from '../models/StockUnit.js';
+import StockReceipt from '../models/StockReceipt.js';
 
 // Create Stock Item
 const createStockItem = async (req, res) => {
+    let session;
+
     try {
         const {
             name,
@@ -27,9 +33,9 @@ const createStockItem = async (req, res) => {
         const minimumQuantity = Number(minimumStockLevel ?? 5);
 
         if (
-            !Number.isInteger(receivedQuantity) ||
+            !Number.isSafeInteger(receivedQuantity) ||
             receivedQuantity < 0 ||
-            !Number.isInteger(minimumQuantity) ||
+            !Number.isSafeInteger(minimumQuantity) ||
             minimumQuantity < 0
         ) {
             return res.status(400).json({
@@ -39,45 +45,117 @@ const createStockItem = async (req, res) => {
 
         const normalizedSku = sku?.trim() || undefined;
 
-        if (normalizedSku) {
-            const existingItem = await StockItem.findOne({
-                sku: normalizedSku
-            });
+        // START TRANSACTION
+        session = await mongoose.startSession();
 
-            if (existingItem) {
-                return res.status(409).json({
-                    message: 'This SKU already exists'
-                });
+        let stockItem;
+        let receipt = null;
+
+        await session.withTransaction(async () => {
+
+            // CHECK DUPLICATE SKU
+            if (normalizedSku) {
+                const existingItem = await StockItem.findOne({
+                    sku: normalizedSku
+                }).session(session);
+
+                if (existingItem) {
+                    const error = new Error('This SKU already exists');
+                    error.statusCode = 409;
+                    throw error;
+                }
             }
-        }
 
-        const stockItem = await StockItem.create({
-            name: name.trim(),
-            category: category.trim(),
-            brand: brand || '',
-            model: model || '',
-            sku: normalizedSku,
-            unit: unit || 'Piece',
-            totalReceivedQuantity: receivedQuantity,
-            availableQuantity: receivedQuantity,
-            assignedQuantity: 0,
-            damagedQuantity: 0,
-            underRepairQuantity: 0,
-            orderedQuantity: 0,
-            minimumStockLevel: minimumQuantity,
-            description: description || '',
-            isActive: true
+            // CREATE STOCK ITEM
+            const createdItems = await StockItem.create(
+                [{
+                    name: name.trim(),
+                    category: category.trim(),
+                    brand: brand || '',
+                    model: model || '',
+                    sku: normalizedSku,
+                    unit: unit || 'Piece',
+
+                    totalReceivedQuantity: receivedQuantity,
+                    availableQuantity: receivedQuantity,
+
+                    assignedQuantity: 0,
+                    damagedQuantity: 0,
+                    underRepairQuantity: 0,
+                    orderedQuantity: 0,
+
+                    minimumStockLevel: minimumQuantity,
+                    description: description || '',
+                    isActive: true
+                }],
+                { session }
+            );
+
+            stockItem = createdItems[0];
+
+            // CREATE OPENING RECEIPT AND INDIVIDUAL UNITS
+            if (receivedQuantity > 0) {
+
+                // CREATE INITIAL STOCK RECEIPT
+                const createdReceipts = await StockReceipt.create(
+                    [{
+                        stockItem: stockItem._id,
+                        receiptNumber: `REC-${randomUUID()}`,
+                        quantity: receivedQuantity,
+                        receivedDate: new Date(),
+                        supplier: 'Initial Stock',
+                        referenceNumber: 'INITIAL-STOCK',
+                        description: 'Initial stock received during product creation',
+                        receivedBy: req.user?._id || null
+                    }],
+                    { session }
+                );
+
+                receipt = createdReceipts[0];
+
+                // GENERATE INDIVIDUAL STOCK UNITS
+                const stockUnits = Array.from(
+                    { length: receivedQuantity },
+                    () => ({
+                        stockItem: stockItem._id,
+                        unitCode: `UMC-UNIT-${randomUUID()}`,
+                        receipt: receipt._id,
+                        status: 'Available',
+                        asset: null
+                    })
+                );
+
+                // SAVE INDIVIDUAL STOCK UNITS
+                await StockUnit.insertMany(
+                    stockUnits,
+                    {
+                        ordered: true,
+                        session
+                    }
+                );
+            }
         });
 
         return res.status(201).json({
+            success: true,
             message: 'Stock item created successfully',
-            stockItem
+            stockItem,
+            receipt,
+            generatedUnits: receivedQuantity
         });
 
     } catch (error) {
+        console.error('CREATE STOCK ITEM ERROR:', error);
+
         if (error.code === 11000) {
             return res.status(409).json({
-                message: 'This SKU already exists'
+                message: 'This SKU or generated stock code already exists'
+            });
+        }
+
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({
+                message: error.message
             });
         }
 
@@ -85,8 +163,14 @@ const createStockItem = async (req, res) => {
             message: 'Failed to create stock item',
             error: error.message
         });
+
+    } finally {
+        if (session) {
+            await session.endSession();
+        }
     }
 };
+
 
 // Get All Stock Items
 const getAllStockItems = async (req, res) => {
@@ -106,6 +190,7 @@ const getAllStockItems = async (req, res) => {
     }
 };
 
+
 // Get Stock Statistics
 const getStockStats = async (req, res) => {
     try {
@@ -120,30 +205,37 @@ const getStockStats = async (req, res) => {
             lowStock
         ] = await Promise.all([
             StockItem.countDocuments({ isActive: true }),
+
             StockItem.aggregate([
                 { $match: { isActive: true } },
                 { $group: { _id: null, total: { $sum: '$totalReceivedQuantity' } } }
             ]),
+
             StockItem.aggregate([
                 { $match: { isActive: true } },
                 { $group: { _id: null, total: { $sum: '$availableQuantity' } } }
             ]),
+
             StockItem.aggregate([
                 { $match: { isActive: true } },
                 { $group: { _id: null, total: { $sum: '$assignedQuantity' } } }
             ]),
+
             StockItem.aggregate([
                 { $match: { isActive: true } },
                 { $group: { _id: null, total: { $sum: '$damagedQuantity' } } }
             ]),
+
             StockItem.aggregate([
                 { $match: { isActive: true } },
                 { $group: { _id: null, total: { $sum: '$underRepairQuantity' } } }
             ]),
+
             StockItem.aggregate([
                 { $match: { isActive: true } },
                 { $group: { _id: null, total: { $sum: '$orderedQuantity' } } }
             ]),
+
             StockItem.countDocuments({
                 isActive: true,
                 $expr: {
@@ -173,6 +265,7 @@ const getStockStats = async (req, res) => {
     }
 };
 
+
 // Update Stock Item Details
 // STOCK QUANTITY UPDATE - Search: STOCK QUANTITY UPDATE
 const updateStockItem = async (req, res) => {
@@ -186,7 +279,6 @@ const updateStockItem = async (req, res) => {
             model,
             sku,
             unit,
-            totalReceivedQuantity,
             minimumStockLevel,
             description
         } = req.body;
@@ -205,7 +297,7 @@ const updateStockItem = async (req, res) => {
 
         if (
             minimumStockLevel !== undefined &&
-            (!Number.isInteger(Number(minimumStockLevel)) ||
+            (!Number.isSafeInteger(Number(minimumStockLevel)) ||
                 Number(minimumStockLevel) < 0)
         ) {
             return res.status(400).json({
@@ -237,36 +329,8 @@ const updateStockItem = async (req, res) => {
             });
         }
 
-        // STOCK RECEIVED QUANTITY UPDATE - Search: STOCK RECEIVED QUANTITY UPDATE
-        if (totalReceivedQuantity !== undefined) {
-            const newReceivedQuantity = Number(totalReceivedQuantity);
-
-            if (
-                !Number.isInteger(newReceivedQuantity) ||
-                newReceivedQuantity < 0
-            ) {
-                return res.status(400).json({
-                    message: 'Received quantity must be a non-negative whole number'
-                });
-            }
-
-            const assigned = Number(stockItem.assignedQuantity || 0);
-            const damaged = Number(stockItem.damagedQuantity || 0);
-            const underRepair = Number(stockItem.underRepairQuantity || 0);
-
-            const committedQuantity = assigned + damaged + underRepair;
-
-            if (newReceivedQuantity < committedQuantity) {
-                return res.status(400).json({
-                    message: `Received quantity cannot be less than assigned, damaged and under-repair quantity (${committedQuantity})`
-                });
-            }
-
-            stockItem.totalReceivedQuantity = newReceivedQuantity;
-
-            stockItem.availableQuantity =
-                newReceivedQuantity - committedQuantity;
-        }
+        // STOCK QUANTITY IS NOT UPDATED HERE.
+        // Use the separate RECEIVE STOCK API to increase quantities.
 
         // STOCK PRODUCT DETAILS UPDATE - Search: STOCK PRODUCT DETAILS UPDATE
         stockItem.name = name.trim();
@@ -302,6 +366,7 @@ const updateStockItem = async (req, res) => {
         });
     }
 };
+
 
 // Delete Stock Item (Soft Delete)
 // Delete Stock Item (Permanent Delete) - Search: DELETE STOCK ITEM
@@ -347,6 +412,7 @@ const deleteStockItem = async (req, res) => {
         });
     }
 };
+
 
 export {
     createStockItem,

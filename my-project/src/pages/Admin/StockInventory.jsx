@@ -7,7 +7,7 @@ import AdminSidebar from '../../components/AdminSidebar.jsx';
 
 // STOCK INVENTORY PAGE - Search: STOCK INVENTORY PAGE
 
-const API_URL = 'http://localhost:3000/api/stock';
+const API_URL = 'http://localhost:3001/api/stock';
 
 const StockInventory = () => {
     const navigate = useNavigate();

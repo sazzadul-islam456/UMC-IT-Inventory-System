@@ -6,7 +6,7 @@ import AdminSidebar from '../../components/AdminSidebar.jsx';
 
 // DEPARTMENT MANAGEMENT PAGE - Search: DEPARTMENT MANAGEMENT PAGE
 
-const API_URL = 'http://localhost:3000/api/departments';
+const API_URL = 'http://localhost:3001/api/departments';
 
 const DepartmentManagement = () => {
     const navigate = useNavigate();

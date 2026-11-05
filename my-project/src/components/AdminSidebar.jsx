@@ -23,21 +23,32 @@ const AdminSidebar = () => {
 
     const params = new URLSearchParams(location.search);
 
+    // ACTIVE MENU - Search: ACTIVE MENU
     const activeMenu = location.pathname === '/admin/stock'
         ? 'Stock Inventory'
-        : location.pathname === '/admin/departments'
-            ? 'Departments'
-            : location.pathname === '/admin/rooms'
-                ? 'Room Management'
-                : location.pathname === '/admin/dashboard'
-                    ? (params.get('menu') || 'Dashboard')
-                    : '';
+        : location.pathname === '/admin/assets'
+            ? 'Asset Management'
+            : location.pathname === '/admin/departments'
+                ? 'Departments'
+                : location.pathname === '/admin/rooms'
+                    ? 'Room Management'
+                    : location.pathname === '/admin/users'
+                        ? 'User Management'
+                        : location.pathname === '/admin/dashboard'
+                            ? (params.get('menu') || 'Dashboard')
+                            : '';
 
+    // MENU NAVIGATION - Search: MENU NAVIGATION
     const handleNavigation = (menuName) => {
         setSidebarOpen(false);
 
         if (menuName === 'Stock Inventory') {
             navigate('/admin/stock');
+            return;
+        }
+
+        if (menuName === 'Asset Management') {
+            navigate('/admin/assets');
             return;
         }
 
@@ -48,6 +59,11 @@ const AdminSidebar = () => {
 
         if (menuName === 'Room Management') {
             navigate('/admin/rooms');
+            return;
+        }
+
+        if (menuName === 'User Management') {
+            navigate('/admin/users');
             return;
         }
 

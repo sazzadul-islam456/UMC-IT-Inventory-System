@@ -22,7 +22,7 @@ const Login = () => {
 
         try {
             const response = await axios.post(
-                'http://localhost:3000/api/auth/login',
+                'http://localhost:3001/api/auth/login',
                 {
                     email: email.trim(),
                     password
