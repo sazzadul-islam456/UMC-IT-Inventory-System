@@ -1,4 +1,3 @@
-
 import mongoose from 'mongoose';
 
 const stockItemSchema = new mongoose.Schema(
@@ -32,6 +31,20 @@ const stockItemSchema = new mongoose.Schema(
             trim: true,
             unique: true,
             sparse: true
+        },
+
+        // PRODUCT WARRANTY
+        warranty: {
+            type: String,
+            trim: true,
+            default: ''
+        },
+
+        // PRODUCT SUPPLIER
+        supplierName: {
+            type: String,
+            trim: true,
+            default: ''
         },
 
         unit: {

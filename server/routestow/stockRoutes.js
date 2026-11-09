@@ -6,7 +6,8 @@ import {
     getAllStockItems,
     getStockStats,
     updateStockItem,
-    deleteStockItem
+    deleteStockItem,
+    deleteStockUnit
 } from '../controllerstwo/stockControllers.js';
 
 // STOCK RECEIVING CONTROLLERS
@@ -43,6 +44,13 @@ router.get('/:id/receipts', adminMiddleware, getStockReceipts);
 
 // INDIVIDUAL STOCK UNITS
 router.get('/:id/units', adminMiddleware, getStockUnits);
+
+// DELETE INDIVIDUAL STOCK UNIT
+router.delete(
+    '/:id/units/:unitId',
+    adminMiddleware,
+    deleteStockUnit
+);
 
 // Admin only: Get All Stock Items
 router.get('/', adminMiddleware, getAllStockItems);

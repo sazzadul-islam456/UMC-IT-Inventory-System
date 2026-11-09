@@ -332,8 +332,18 @@ export const getStockUnits = async (req, res) => {
         const units = await StockUnit.find({
             stockItem: id
         })
-            .populate('receipt', 'receiptNumber receivedDate supplier')
+            // PRODUCT DETAILS INCLUDING WARRANTY
+            .populate('stockItem', 'name sku category brand model warranty')
+
+            // RECEIVING HISTORY DETAILS
+            .populate(
+                'receipt',
+                'receiptNumber receivedDate supplier referenceNumber description'
+            )
+
+            // ASSET DETAILS
             .populate('asset')
+
             .sort({ createdAt: -1 });
 
         return res.status(200).json({
