@@ -669,6 +669,20 @@ export const deleteStockItem = async (req, res) => {
             });
         }
 
+                // PREVENT DELETION IF PRODUCT HAS STOCK HISTORY
+
+        const [hasStockUnits, hasStockReceipts] = await Promise.all([
+            StockUnit.exists({ stockItem: id }),
+            StockReceipt.exists({ stockItem: id })
+        ]);
+
+        if (hasStockUnits || hasStockReceipts) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot delete product because stock units or receiving history exists'
+            });
+        }
+
         // PREVENT DELETION IF STOCK IS IN USE
         if (
             stockItem.assignedQuantity > 0 ||

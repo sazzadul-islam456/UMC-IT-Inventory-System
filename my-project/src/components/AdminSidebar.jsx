@@ -14,6 +14,7 @@ const AdminSidebar = () => {
         { name: 'Dashboard', icon: '▦' },
         { name: 'User Management', icon: '♙' },
         { name: 'Stock Inventory', icon: '📦' },
+        { name: 'Supplier Return', icon: '↩' },
         { name: 'Asset Management', icon: '▣' },
         { name: 'Departments', icon: '▤' },
         { name: 'Room Management', icon: '🚪' },
@@ -26,17 +27,19 @@ const AdminSidebar = () => {
     // ACTIVE MENU - Search: ACTIVE MENU
     const activeMenu = location.pathname === '/admin/stock'
         ? 'Stock Inventory'
-        : location.pathname === '/admin/assets'
-            ? 'Asset Management'
-            : location.pathname === '/admin/departments'
-                ? 'Departments'
-                : location.pathname === '/admin/rooms'
-                    ? 'Room Management'
-                    : location.pathname === '/admin/users'
-                        ? 'User Management'
-                        : location.pathname === '/admin/dashboard'
-                            ? (params.get('menu') || 'Dashboard')
-                            : '';
+        : location.pathname === '/admin/supplier-returns'
+            ? 'Supplier Return'
+            : location.pathname === '/admin/assets'
+                ? 'Asset Management'
+                : location.pathname === '/admin/departments'
+                    ? 'Departments'
+                    : location.pathname === '/admin/rooms'
+                        ? 'Room Management'
+                        : location.pathname === '/admin/users'
+                            ? 'User Management'
+                            : location.pathname === '/admin/dashboard'
+                                ? (params.get('menu') || 'Dashboard')
+                                : '';
 
     // MENU NAVIGATION - Search: MENU NAVIGATION
     const handleNavigation = (menuName) => {
@@ -44,6 +47,11 @@ const AdminSidebar = () => {
 
         if (menuName === 'Stock Inventory') {
             navigate('/admin/stock');
+            return;
+        }
+
+        if (menuName === 'Supplier Return') {
+            navigate('/admin/supplier-returns');
             return;
         }
 

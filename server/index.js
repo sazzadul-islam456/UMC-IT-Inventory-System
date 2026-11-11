@@ -15,6 +15,12 @@ import roomRoutes from './routestow/roomRoutes.js';
 // ASSET ROUTES IMPORT
 import assetRoutes from './routestow/assetRoutes.js';
 
+// SUPPLIER ROUTES IMPORT
+import supplierRoutes from './routestow/supplierRoutes.js';
+
+// SUPPLIER RETURN ROUTES IMPORT
+import supplierReturnRoutes from './routestow/supplierReturnRoutes.js';
+
 const app = express();
 
 // MIDDLEWARE
@@ -63,6 +69,12 @@ app.use('/api/rooms', roomRoutes);
 // ASSET ROUTES MOUNT
 app.use('/api/assets', assetRoutes);
 
+// SUPPLIER ROUTES MOUNT
+app.use('/api/suppliers', supplierRoutes);
+
+// SUPPLIER RETURN ROUTES MOUNT
+app.use('/api/supplier-returns', supplierReturnRoutes);
+
 // REGISTERED ROUTES
 console.log(
     'REGISTERED ROUTES:',
@@ -88,6 +100,8 @@ const startServer = async () => {
         console.log('DEPARTMENT TEST ROUTE REGISTERED');
         console.log('ROOM TEST ROUTE REGISTERED');
         console.log('ASSET ROUTE REGISTERED');
+        console.log('SUPPLIER ROUTE REGISTERED');
+        console.log('SUPPLIER RETURN ROUTE REGISTERED');
 
         app.listen(PORT, () => {
             console.log(`Server is running on port ${PORT}`);

@@ -85,6 +85,19 @@ const assetSchema = new mongoose.Schema(
             default: Date.now
         },
 
+        // SUPPLIER RETURN DOCUMENT REFERENCE
+        supplierReturn: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'SupplierReturn',
+            default: null
+        },
+
+        // SUPPLIER RETURN DATE
+        supplierReturnedAt: {
+            type: Date,
+            default: null
+        },
+
         // ADDITIONAL NOTES
         description: {
             type: String,

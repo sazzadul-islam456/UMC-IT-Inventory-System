@@ -24,6 +24,9 @@ import RoomManagement from './pages/Admin/RoomManagement.jsx';
 // ASSET MANAGEMENT IMPORT - Search: ASSET MANAGEMENT IMPORT
 import AssetManagement from './pages/Admin/AssetManagement.jsx';
 
+// SUPPLIER RETURN MANAGEMENT IMPORT
+import SupplierReturnManagement from './pages/Admin/SupplierReturnManagement.jsx';
+
 const App = () => {
     return (
         <Router>
@@ -86,6 +89,16 @@ const App = () => {
                     element={
                         <ProtectedRoutes requireRole={['admin']}>
                             <AssetManagement />
+                        </ProtectedRoutes>
+                    }
+                />
+
+                {/* SUPPLIER RETURN MANAGEMENT ROUTE */}
+                <Route
+                    path="/admin/supplier-returns"
+                    element={
+                        <ProtectedRoutes requireRole={['admin']}>
+                            <SupplierReturnManagement />
                         </ProtectedRoutes>
                     }
                 />

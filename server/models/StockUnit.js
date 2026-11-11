@@ -57,6 +57,19 @@ const stockUnitSchema = new mongoose.Schema(
             default: null
         },
 
+        // SUPPLIER RETURN DOCUMENT REFERENCE
+        supplierReturn: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'SupplierReturn',
+            default: null
+        },
+
+        // SUPPLIER RETURN DATE
+        supplierReturnedAt: {
+            type: Date,
+            default: null
+        },
+
         // ADDITIONAL NOTES
         description: {
             type: String,

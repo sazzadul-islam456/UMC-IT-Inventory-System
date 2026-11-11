@@ -1,3 +1,4 @@
+
 import mongoose from 'mongoose';
 
 const stockItemSchema = new mongoose.Schema(
@@ -54,6 +55,13 @@ const stockItemSchema = new mongoose.Schema(
         },
 
         totalReceivedQuantity: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+
+        // TOTAL QUANTITY RETURNED TO SUPPLIER
+        supplierReturnedQuantity: {
             type: Number,
             default: 0,
             min: 0
