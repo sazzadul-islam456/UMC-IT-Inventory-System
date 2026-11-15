@@ -405,44 +405,50 @@ const UserManagement = () => {
 
     // Reusable Stat Card
     const StatCard = ({ title, value, icon, color, description }) => (
-        <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:-translate-y-1 transition duration-300">
-            <div className="flex justify-between items-start">
+        <div className="group bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-orange-50 rounded-full -translate-y-1/2 translate-x-1/2 opacity-60 group-hover:scale-125 transition-transform duration-500" />
+
+            <div className="relative flex justify-between items-start">
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold ${color}`}>
                     {icon}
                 </div>
 
-                <span className="text-xs font-medium text-slate-400">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50 px-3 py-1.5 rounded-full">
                     Overview
                 </span>
             </div>
 
-            <h2 className="text-3xl font-bold text-slate-800 mt-5">
+            <h2 className="relative text-3xl font-extrabold text-slate-800 mt-5">
                 {value}
             </h2>
 
-            <p className="text-sm font-semibold text-slate-600 mt-1">
+            <p className="relative text-sm font-bold text-slate-700 mt-1">
                 {title}
             </p>
 
-            <p className="text-xs text-slate-400 mt-2">
+            <p className="relative text-xs text-slate-400 mt-2">
                 {description}
             </p>
         </div>
     );
+
+    const inputClass = "w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-orange-400 focus:ring-4 focus:ring-orange-100 outline-none transition-all duration-200 text-sm text-slate-700";
+    const selectClass = "w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-orange-400 focus:ring-4 focus:ring-orange-100 outline-none text-sm text-slate-700 transition-all duration-200";
 
     return (
         <div className="min-h-screen bg-slate-100 flex">
             <AdminSidebar />
 
             <main className="flex-1 lg:ml-64 min-w-0">
-                <header className="bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between sticky top-0 z-20">
+                {/* Header */}
+                <header className="bg-[#101d36] border-b border-slate-700 px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between sticky top-0 z-20 shadow-md">
                     <div className="flex items-center gap-3 min-w-0">
                         <div className="min-w-0">
-                            <p className="text-[10px] sm:text-xs text-slate-400 font-semibold tracking-wide">
+                            <p className="text-[10px] sm:text-xs text-slate-400 font-semibold tracking-widest">
                                 UNITED MEDICAL COLLEGE / ADMIN
                             </p>
 
-                            <h2 className="text-lg sm:text-xl font-bold text-slate-800 mt-1 truncate">
+                            <h2 className="text-lg sm:text-xl font-bold text-white mt-1 truncate">
                                 User Management
                             </h2>
                         </div>
@@ -450,7 +456,7 @@ const UserManagement = () => {
 
                     <div className="flex items-center gap-3">
                         <div className="hidden sm:block text-right">
-                            <p className="text-sm font-semibold text-slate-800">
+                            <p className="text-sm font-semibold text-white">
                                 {user?.name || 'Administrator'}
                             </p>
 
@@ -459,19 +465,21 @@ const UserManagement = () => {
                             </p>
                         </div>
 
-                        <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold uppercase">
+                        <div className="w-10 h-10 rounded-full bg-orange-500 text-white flex items-center justify-center font-bold uppercase shadow-lg shadow-orange-500/20">
                             {user?.name?.charAt(0) || 'A'}
                         </div>
                     </div>
                 </header>
 
-                <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+                <div className="p-4 sm:p-6 lg:p-8 max-w-7.5xl mx-auto">
+                    {/* Page Heading */}
                     <div className="mb-7">
-                        <p className="text-sm text-blue-600 font-semibold mb-2">
+                        <div className="inline-flex items-center gap-2 text-xs text-orange-600 font-bold mb-3 bg-orange-50 px-3 py-1.5 rounded-full">
+                            <span className="w-2 h-2 rounded-full bg-orange-500" />
                             USER ADMINISTRATION
-                        </p>
+                        </div>
 
-                        <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">
+                        <h1 className="text-2xl sm:text-3xl font-extrabold text-[#101d36]">
                             User Management
                         </h1>
 
@@ -480,50 +488,84 @@ const UserManagement = () => {
                         </p>
                     </div>
 
+                    {/* Statistics */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-7">
-                        <StatCard title="Total Users" value={userStats.totalUsers} icon="♙" color="bg-blue-50 text-blue-600" description="All registered users" />
-                        <StatCard title="Administrators" value={userStats.totalAdmins} icon="🛡️" color="bg-violet-50 text-violet-600" description="Admin accounts" />
-                        <StatCard title="Active Users" value={activeUsers} icon="✓" color="bg-emerald-50 text-emerald-600" description="Active accounts" />
-                        <StatCard title="Inactive Users" value={inactiveUsers} icon="⊘" color="bg-red-50 text-red-600" description="Inactive accounts" />
+                        <StatCard
+                            title="Total Users"
+                            value={userStats.totalUsers}
+                            icon="♙"
+                            color="bg-orange-50 text-orange-600"
+                            description="All registered users"
+                        />
+
+                        <StatCard
+                            title="Administrators"
+                            value={userStats.totalAdmins}
+                            icon="🛡️"
+                            color="bg-slate-100 text-[#101d36]"
+                            description="Admin accounts"
+                        />
+
+                        <StatCard
+                            title="Active Users"
+                            value={activeUsers}
+                            icon="✓"
+                            color="bg-emerald-50 text-emerald-600"
+                            description="Active accounts"
+                        />
+
+                        <StatCard
+                            title="Inactive Users"
+                            value={inactiveUsers}
+                            icon="⊘"
+                            color="bg-red-50 text-red-600"
+                            description="Inactive accounts"
+                        />
                     </div>
 
                     {/* Add New User Form */}
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
-                        <div className="mb-6">
-                            <h2 className="text-lg font-bold text-slate-800">
-                                + Add New User
-                            </h2>
+                        <div className="mb-6 flex items-center gap-3">
+                            <div className="w-11 h-11 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center text-xl font-bold">
+                                +
+                            </div>
 
-                            <p className="text-xs text-slate-400 mt-1">
-                                Only administrators can create accounts.
-                            </p>
+                            <div>
+                                <h2 className="text-lg font-bold text-[#101d36]">
+                                    Add New User
+                                </h2>
+
+                                <p className="text-xs text-slate-400 mt-1">
+                                    Only administrators can create accounts.
+                                </p>
+                            </div>
                         </div>
 
                         <form onSubmit={handleCreateUser}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 <div>
                                     <label className="block text-sm font-semibold text-slate-700 mb-2">Full Name</label>
-                                    <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter full name" required className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+                                    <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter full name" required className={inputClass} />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-semibold text-slate-700 mb-2">Email Address</label>
-                                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter email address" required className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+                                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter email address" required className={inputClass} />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-semibold text-slate-700 mb-2">Password</label>
-                                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create password" minLength={6} required className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+                                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create password" minLength={6} required className={inputClass} />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-semibold text-slate-700 mb-2">WhatsApp Number</label>
-                                    <input type="tel" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} placeholder="+8801XXXXXXXXX" className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition" />
+                                    <input type="tel" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} placeholder="+8801XXXXXXXXX" className={inputClass} />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-semibold text-slate-700 mb-2">User Role</label>
-                                    <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition">
+                                    <select value={role} onChange={(e) => setRole(e.target.value)} className={selectClass}>
                                         <option value="user">Normal User</option>
                                         <option value="admin">Administrator</option>
                                         <option value="employee">Employee</option>
@@ -545,7 +587,7 @@ const UserManagement = () => {
                             )}
 
                             <div className="mt-7 flex justify-end">
-                                <button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white px-7 py-3 rounded-xl font-semibold text-sm shadow-lg shadow-blue-600/20 transition disabled:opacity-50">
+                                <button type="submit" disabled={loading} className="bg-orange-500 hover:bg-orange-600 text-white px-7 py-3 rounded-xl font-bold text-sm shadow-lg shadow-orange-500/20 transition-all duration-200 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed">
                                     {loading ? 'Creating...' : '+ Create User'}
                                 </button>
                             </div>
@@ -556,34 +598,35 @@ const UserManagement = () => {
                     <div className="mt-8 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                         <div className="p-5 sm:p-6 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
-                                <h2 className="text-lg font-bold text-slate-800">All Users</h2>
+                                <h2 className="text-lg font-bold text-[#101d36]">All Users</h2>
                                 <p className="text-xs text-slate-400 mt-1">Search, filter and view registered users</p>
                             </div>
 
                             <div className="flex flex-wrap gap-2">
-                                <button onClick={handleExportUsers} disabled={filteredUsers.length === 0} className="px-4 py-2.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-sm font-semibold transition disabled:opacity-40">
+                                <button onClick={handleExportUsers} disabled={filteredUsers.length === 0} className="px-4 py-2.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-sm font-bold transition disabled:opacity-40">
                                     ↓ Export CSV
                                 </button>
 
-                                <button onClick={() => { fetchUserStats(); fetchAllUsers(); }} disabled={usersLoading} className="px-4 py-2.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 text-sm font-semibold transition disabled:opacity-50">
+                                <button onClick={() => { fetchUserStats(); fetchAllUsers(); }} disabled={usersLoading} className="px-4 py-2.5 rounded-xl bg-orange-50 text-orange-700 hover:bg-orange-100 text-sm font-bold transition disabled:opacity-50">
                                     {usersLoading ? 'Loading...' : '↻ Refresh'}
                                 </button>
                             </div>
                         </div>
 
+                        {/* Search and Filters */}
                         <div className="p-5 sm:p-6 bg-slate-50 border-b border-slate-200">
                             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
                                 <div>
-                                    <label className="block text-xs font-semibold text-slate-600 mb-2">Search Users</label>
+                                    <label className="block text-xs font-bold text-slate-600 mb-2">Search Users</label>
                                     <div className="relative">
                                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">⌕</span>
-                                        <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Name, email or WhatsApp..." className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm transition" />
+                                        <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Name, email or WhatsApp..." className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-orange-400 focus:ring-4 focus:ring-orange-100 outline-none text-sm transition-all" />
                                     </div>
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-semibold text-slate-600 mb-2">Filter by Role</label>
-                                    <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-blue-500 outline-none text-sm">
+                                    <label className="block text-xs font-bold text-slate-600 mb-2">Filter by Role</label>
+                                    <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className={selectClass}>
                                         <option value="all">All Roles</option>
                                         <option value="admin">Administrator</option>
                                         <option value="user">Normal User</option>
@@ -593,8 +636,8 @@ const UserManagement = () => {
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-semibold text-slate-600 mb-2">Filter by Status</label>
-                                    <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-blue-500 outline-none text-sm">
+                                    <label className="block text-xs font-bold text-slate-600 mb-2">Filter by Status</label>
+                                    <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectClass}>
                                         <option value="all">All Status</option>
                                         <option value="active">Active</option>
                                         <option value="inactive">Inactive</option>
@@ -602,8 +645,8 @@ const UserManagement = () => {
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-semibold text-slate-600 mb-2">Sort Users</label>
-                                    <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-blue-500 outline-none text-sm">
+                                    <label className="block text-xs font-bold text-slate-600 mb-2">Sort Users</label>
+                                    <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className={selectClass}>
                                         <option value="newest">Newest First</option>
                                         <option value="oldest">Oldest First</option>
                                         <option value="name">Name A - Z</option>
@@ -613,10 +656,10 @@ const UserManagement = () => {
 
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
                                 <p className="text-xs text-slate-500">
-                                    Found <span className="font-bold text-slate-800">{filteredUsers.length}</span> matching users out of <span className="font-bold text-slate-800">{users.length}</span>
+                                    Found <span className="font-bold text-[#101d36]">{filteredUsers.length}</span> matching users out of <span className="font-bold text-[#101d36]">{users.length}</span>
                                 </p>
 
-                                <button onClick={() => { setSearchTerm(''); setRoleFilter('all'); setStatusFilter('all'); setSortOrder('newest'); }} className="text-xs font-semibold text-blue-600 hover:text-blue-800 text-left">
+                                <button onClick={() => { setSearchTerm(''); setRoleFilter('all'); setStatusFilter('all'); setSortOrder('newest'); }} className="text-xs font-bold text-orange-600 hover:text-orange-800 text-left transition">
                                     ✕ Clear All Filters
                                 </button>
                             </div>
@@ -633,7 +676,7 @@ const UserManagement = () => {
                         {usersLoading ? (
                             <div className="p-10">
                                 <div className="flex justify-center mb-4">
-                                    <div className="w-9 h-9 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
+                                    <div className="w-9 h-9 border-4 border-orange-100 border-t-orange-500 rounded-full animate-spin" />
                                 </div>
 
                                 <p className="text-center text-slate-500 text-sm">Loading users...</p>
@@ -647,16 +690,16 @@ const UserManagement = () => {
                         ) : users.length === 0 ? (
                             <div className="p-12 text-center">
                                 <div className="text-4xl mb-3">👥</div>
-                                <h3 className="font-bold text-slate-700">No Users Found</h3>
+                                <h3 className="font-bold text-[#101d36]">No Users Found</h3>
                                 <p className="text-sm text-slate-400 mt-2">Create your first user to get started.</p>
                             </div>
                         ) : filteredUsers.length === 0 ? (
                             <div className="p-12 text-center">
                                 <div className="text-4xl mb-3">🔎</div>
-                                <h3 className="font-bold text-slate-700">No Matching Users</h3>
+                                <h3 className="font-bold text-[#101d36]">No Matching Users</h3>
                                 <p className="text-sm text-slate-400 mt-2">Try changing your search or filters.</p>
 
-                                <button onClick={() => { setSearchTerm(''); setRoleFilter('all'); setStatusFilter('all'); }} className="mt-4 px-5 py-2.5 bg-blue-50 text-blue-600 rounded-xl text-sm font-semibold hover:bg-blue-100">
+                                <button onClick={() => { setSearchTerm(''); setRoleFilter('all'); setStatusFilter('all'); }} className="mt-4 px-5 py-2.5 bg-orange-50 text-orange-600 rounded-xl text-sm font-bold hover:bg-orange-100 transition">
                                     Clear Filters
                                 </button>
                             </div>
@@ -664,10 +707,10 @@ const UserManagement = () => {
                             <>
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left min-w-[1200px]">
-                                        <thead className="bg-slate-50">
+                                        <thead className="bg-[#101d36]">
                                             <tr>
                                                 {['#', 'User', 'Email', 'WhatsApp Number', 'Role', 'Status', 'Created Date', 'Actions'].map((heading) => (
-                                                    <th key={heading} className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">{heading}</th>
+                                                    <th key={heading} className="px-6 py-4 text-xs font-bold text-slate-200 uppercase tracking-wider">{heading}</th>
                                                 ))}
                                             </tr>
                                         </thead>
@@ -678,16 +721,16 @@ const UserManagement = () => {
                                                 const whatsappLink = getWhatsAppLink(rowUser.whatsappNumber);
 
                                                 return (
-                                                    <tr key={rowUser._id} className="hover:bg-blue-50/40 transition">
-                                                        <td className="px-6 py-4 text-sm text-slate-500">{(currentPage - 1) * usersPerPage + index + 1}</td>
+                                                    <tr key={rowUser._id} className="hover:bg-orange-50/50 transition-colors">
+                                                        <td className="px-6 py-4 text-sm text-slate-400 font-medium">{(currentPage - 1) * usersPerPage + index + 1}</td>
 
                                                         <td className="px-6 py-4">
                                                             <div className="flex items-center gap-3">
-                                                                <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center font-bold uppercase shrink-0">
+                                                                <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center font-bold uppercase shrink-0">
                                                                     {rowUser.name?.charAt(0) || 'U'}
                                                                 </div>
                                                                 <div>
-                                                                    <p className="text-sm font-semibold text-slate-800">{rowUser.name}</p>
+                                                                    <p className="text-sm font-bold text-[#101d36]">{rowUser.name}</p>
                                                                     <p className="text-xs text-slate-400">User Account</p>
                                                                 </div>
                                                             </div>
@@ -697,7 +740,7 @@ const UserManagement = () => {
 
                                                         <td className="px-6 py-4 text-sm">
                                                             {whatsappLink ? (
-                                                                <a href={whatsappLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-800 font-medium">
+                                                                <a href={whatsappLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-800 font-semibold">
                                                                     <span>☏</span>{rowUser.whatsappNumber}
                                                                 </a>
                                                             ) : (
@@ -706,9 +749,9 @@ const UserManagement = () => {
                                                         </td>
 
                                                         <td className="px-6 py-4">
-                                                            <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
+                                                            <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${
                                                                 rowUser.role === 'admin'
-                                                                    ? 'bg-blue-50 text-blue-700'
+                                                                    ? 'bg-[#101d36] text-white'
                                                                     : rowUser.role === 'employee'
                                                                         ? 'bg-violet-50 text-violet-700'
                                                                         : rowUser.role === 'customer'
@@ -722,7 +765,7 @@ const UserManagement = () => {
                                                         </td>
 
                                                         <td className="px-6 py-4">
-                                                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
+                                                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
                                                                 rowUser.isActive === false
                                                                     ? 'bg-red-50 text-red-700'
                                                                     : 'bg-emerald-50 text-emerald-700'
@@ -740,11 +783,11 @@ const UserManagement = () => {
 
                                                         <td className="px-6 py-4">
                                                             <div className="flex items-center gap-2">
-                                                                <button onClick={() => handleOpenEdit(rowUser)} className="px-3 py-2 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition">
+                                                                <button onClick={() => handleOpenEdit(rowUser)} className="px-3 py-2 rounded-lg bg-orange-50 text-orange-700 hover:bg-orange-100 text-xs font-bold transition">
                                                                     ✎ Edit
                                                                 </button>
 
-                                                                <button onClick={() => handleOpenDelete(rowUser)} disabled={isLoggedInAdmin} title={isLoggedInAdmin ? 'You cannot delete your own account' : 'Delete user'} className="px-3 py-2 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed">
+                                                                <button onClick={() => handleOpenDelete(rowUser)} disabled={isLoggedInAdmin} title={isLoggedInAdmin ? 'You cannot delete your own account' : 'Delete user'} className="px-3 py-2 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 text-xs font-bold transition disabled:opacity-40 disabled:cursor-not-allowed">
                                                                     🗑 Delete
                                                                 </button>
                                                             </div>
@@ -756,19 +799,20 @@ const UserManagement = () => {
                                     </table>
                                 </div>
 
+                                {/* Pagination */}
                                 <div className="px-5 sm:px-6 py-4 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-4">
                                     <p className="text-xs text-slate-500">
-                                        Showing <span className="font-bold text-slate-700">{filteredUsers.length === 0 ? 0 : (currentPage - 1) * usersPerPage + 1}</span> to <span className="font-bold text-slate-700">{Math.min(currentPage * usersPerPage, filteredUsers.length)}</span> of <span className="font-bold text-slate-700">{filteredUsers.length}</span> users
+                                        Showing <span className="font-bold text-[#101d36]">{filteredUsers.length === 0 ? 0 : (currentPage - 1) * usersPerPage + 1}</span> to <span className="font-bold text-[#101d36]">{Math.min(currentPage * usersPerPage, filteredUsers.length)}</span> of <span className="font-bold text-[#101d36]">{filteredUsers.length}</span> users
                                     </p>
 
                                     <div className="flex items-center gap-2">
-                                        <button onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))} disabled={currentPage === 1} className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed">
+                                        <button onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))} disabled={currentPage === 1} className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:border-orange-300 hover:text-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition">
                                             Previous
                                         </button>
 
                                         <span className="text-xs text-slate-500 px-2">Page {currentPage} of {totalPages}</span>
 
-                                        <button onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages))} disabled={currentPage === totalPages} className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed">
+                                        <button onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages))} disabled={currentPage === totalPages} className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:border-orange-300 hover:text-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition">
                                             Next
                                         </button>
                                     </div>
@@ -778,6 +822,7 @@ const UserManagement = () => {
                     </div>
                 </div>
 
+                {/* Footer */}
                 <footer className="px-5 sm:px-8 py-5 border-t border-slate-200 bg-white text-center">
                     <p className="text-xs text-slate-400">
                         © 2026 United Medical College | IT Asset Management System
@@ -787,37 +832,37 @@ const UserManagement = () => {
 
             {/* Edit User Modal */}
             {editingUser && (
-                <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-50 bg-[#101d36]/70 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between">
+                        <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
                             <div>
-                                <h2 className="text-xl font-bold text-slate-800">Edit User</h2>
+                                <h2 className="text-xl font-bold text-[#101d36]">Edit User</h2>
                                 <p className="text-xs text-slate-400 mt-1">Update user account information</p>
                             </div>
 
-                            <button onClick={() => setEditingUser(null)} disabled={editLoading} className="text-2xl text-slate-400 hover:text-slate-700">×</button>
+                            <button onClick={() => setEditingUser(null)} disabled={editLoading} className="w-9 h-9 rounded-full bg-white border border-slate-200 text-xl text-slate-400 hover:text-orange-600 hover:border-orange-200 transition">×</button>
                         </div>
 
                         <form onSubmit={handleUpdateUser} className="p-6">
                             <div className="space-y-5">
                                 <div>
                                     <label className="block text-sm font-semibold text-slate-700 mb-2">Full Name</label>
-                                    <input type="text" name="name" value={editForm.name} onChange={handleEditChange} required className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none" />
+                                    <input type="text" name="name" value={editForm.name} onChange={handleEditChange} required className={inputClass} />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-semibold text-slate-700 mb-2">Email Address</label>
-                                    <input type="email" name="email" value={editForm.email} onChange={handleEditChange} required className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none" />
+                                    <input type="email" name="email" value={editForm.email} onChange={handleEditChange} required className={inputClass} />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-semibold text-slate-700 mb-2">WhatsApp Number</label>
-                                    <input type="tel" name="whatsappNumber" value={editForm.whatsappNumber} onChange={handleEditChange} placeholder="+8801XXXXXXXXX" className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none" />
+                                    <input type="tel" name="whatsappNumber" value={editForm.whatsappNumber} onChange={handleEditChange} placeholder="+8801XXXXXXXXX" className={inputClass} />
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-semibold text-slate-700 mb-2">User Role</label>
-                                    <select name="role" value={editForm.role} onChange={handleEditChange} disabled={String(editingUser._id) === String(loggedInUserId)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 outline-none disabled:opacity-60">
+                                    <select name="role" value={editForm.role} onChange={handleEditChange} disabled={String(editingUser._id) === String(loggedInUserId)} className={selectClass + " disabled:opacity-60"}>
                                         <option value="user">Normal User</option>
                                         <option value="admin">Administrator</option>
                                         <option value="employee">Employee</option>
@@ -837,11 +882,11 @@ const UserManagement = () => {
                             )}
 
                             <div className="flex justify-end gap-3 mt-7">
-                                <button type="button" onClick={() => setEditingUser(null)} disabled={editLoading} className="px-5 py-3 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-semibold">
+                                <button type="button" onClick={() => setEditingUser(null)} disabled={editLoading} className="px-5 py-3 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-semibold transition">
                                     Cancel
                                 </button>
 
-                                <button type="submit" disabled={editLoading} className="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50">
+                                <button type="submit" disabled={editLoading} className="px-6 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold disabled:opacity-50 transition shadow-lg shadow-orange-500/20">
                                     {editLoading ? 'Updating...' : 'Save Changes'}
                                 </button>
                             </div>
@@ -852,18 +897,18 @@ const UserManagement = () => {
 
             {/* Delete Confirmation Modal */}
             {deletingUser && (
-                <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-50 bg-[#101d36]/70 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6">
-                        <div className="w-14 h-14 rounded-full bg-red-50 text-red-600 flex items-center justify-center text-2xl mx-auto mb-4">🗑</div>
+                        <div className="w-14 h-14 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center text-2xl mx-auto mb-4">🗑</div>
 
-                        <h2 className="text-xl font-bold text-slate-800 text-center">Delete User?</h2>
+                        <h2 className="text-xl font-bold text-[#101d36] text-center">Delete User?</h2>
 
                         <p className="text-sm text-slate-500 text-center mt-3 leading-6">
-                            Are you sure you want to delete <span className="font-bold text-slate-800">{deletingUser.name}</span>? This action cannot be undone.
+                            Are you sure you want to delete <span className="font-bold text-[#101d36]">{deletingUser.name}</span>? This action cannot be undone.
                         </p>
 
-                        <div className="mt-5 p-4 bg-slate-50 rounded-xl">
-                            <p className="text-sm font-semibold text-slate-700">{deletingUser.name}</p>
+                        <div className="mt-5 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                            <p className="text-sm font-semibold text-[#101d36]">{deletingUser.name}</p>
                             <p className="text-xs text-slate-500 mt-1">{deletingUser.email}</p>
 
                             {deletingUser.whatsappNumber && (
@@ -876,11 +921,11 @@ const UserManagement = () => {
                         )}
 
                         <div className="flex gap-3 mt-7">
-                            <button onClick={() => setDeletingUser(null)} disabled={deleteLoading} className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-semibold disabled:opacity-50">
+                            <button onClick={() => setDeletingUser(null)} disabled={deleteLoading} className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-semibold disabled:opacity-50 transition">
                                 Cancel
                             </button>
 
-                            <button onClick={handleDeleteUser} disabled={deleteLoading} className="flex-1 px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold disabled:opacity-50">
+                            <button onClick={handleDeleteUser} disabled={deleteLoading} className="flex-1 px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-bold disabled:opacity-50 transition">
                                 {deleteLoading ? 'Deleting...' : 'Yes, Delete'}
                             </button>
                         </div>

@@ -6,6 +6,9 @@ import authRoutes from './routes/auth.js';
 import userRoutes from './routestow/userRoutes.js';
 import stockRoutes from './routestow/stockRoutes.js';
 
+// ASSIGNMENT ROUTES IMPORT
+import assignmentRoutes from './routestow/assignmentRoutes.js';
+
 // DEPARTMENT ROUTES IMPORT
 import departmentRoutes from './routestow/departmentRoutes.js';
 
@@ -75,6 +78,9 @@ app.use('/api/suppliers', supplierRoutes);
 // SUPPLIER RETURN ROUTES MOUNT
 app.use('/api/supplier-returns', supplierReturnRoutes);
 
+// ASSIGNMENT ROUTES MOUNT
+app.use('/api/assignments', assignmentRoutes);
+
 // REGISTERED ROUTES
 console.log(
     'REGISTERED ROUTES:',
@@ -102,6 +108,7 @@ const startServer = async () => {
         console.log('ASSET ROUTE REGISTERED');
         console.log('SUPPLIER ROUTE REGISTERED');
         console.log('SUPPLIER RETURN ROUTE REGISTERED');
+        console.log('ASSIGNMENT ROUTE REGISTERED');
 
         app.listen(PORT, () => {
             console.log(`Server is running on port ${PORT}`);

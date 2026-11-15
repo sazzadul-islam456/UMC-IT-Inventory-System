@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useMemo } from 'react';
 import AdminSidebar from '../../components/AdminSidebar.jsx';
 
@@ -61,22 +60,18 @@ const getRelationName = (value) => {
 const getStatusStyle = (status) => {
     switch (status) {
         case 'Completed':
+        case 'Available':
             return 'bg-emerald-100 text-emerald-700';
 
         case 'Cancelled':
+        case 'Damaged':
             return 'bg-red-100 text-red-700';
-
-        case 'Available':
-            return 'bg-emerald-100 text-emerald-700';
 
         case 'Assigned':
             return 'bg-blue-100 text-blue-700';
 
-        case 'Damaged':
-            return 'bg-red-100 text-red-700';
-
         case 'Under Repair':
-            return 'bg-amber-100 text-amber-700';
+            return 'bg-orange-100 text-orange-700';
 
         case 'Returned':
             return 'bg-slate-200 text-slate-700';
@@ -98,6 +93,7 @@ const escapeHtml = (value) => {
 };
 
 const SupplierReturnManagement = () => {
+
     // HISTORY STATES
     const [returns, setReturns] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
@@ -114,7 +110,7 @@ const SupplierReturnManagement = () => {
     const [totalPages, setTotalPages] = useState(1);
     const [historyTotal, setHistoryTotal] = useState(0);
 
-    // MODAL STATES
+    // CREATE FORM STATES
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [selectedReturn, setSelectedReturn] = useState(null);
     const [returnDetails, setReturnDetails] = useState(null);
@@ -122,33 +118,28 @@ const SupplierReturnManagement = () => {
     const [detailsError, setDetailsError] = useState('');
 
     // CREATE RETURN STATES
-    const [supplierId, setSupplierId] = useState('');
+    const [skuSearch, setSkuSearch] = useState('');
+    const [selectedProduct, setSelectedProduct] = useState(null);
     const [returnDate, setReturnDate] = useState(getToday());
     const [returnReason, setReturnReason] = useState('');
-    const [referenceNumber, setReferenceNumber] = useState('');
     const [notes, setNotes] = useState('');
 
     // DEVICE SELECTION STATES
     const [stockUnits, setStockUnits] = useState([]);
     const [deviceLoading, setDeviceLoading] = useState(false);
     const [deviceError, setDeviceError] = useState('');
-    const [deviceSearch, setDeviceSearch] = useState('');
-    const [deviceStatus, setDeviceStatus] = useState('');
-    const [devicePage, setDevicePage] = useState(1);
-    const [deviceTotalPages, setDeviceTotalPages] = useState(1);
     const [selectedUnitIds, setSelectedUnitIds] = useState([]);
-
-    // RETURN ITEM INFORMATION
-    const [problemDescription, setProblemDescription] = useState('');
-    const [technicalInspection, setTechnicalInspection] = useState('');
-    const [warrantyStatus, setWarrantyStatus] = useState('Pending');
-    const [warrantyReference, setWarrantyReference] = useState('');
-    const [warrantyNotes, setWarrantyNotes] = useState('');
-    const [itemNotes, setItemNotes] = useState('');
 
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
+
+    // AUTO MATCH SUPPLIER FROM PRODUCT SUPPLIER NAME
+    const selectedSupplier = suppliers.find(
+        (supplier) =>
+            supplier.companyName?.trim().toLowerCase() ===
+            selectedProduct?.supplierName?.trim().toLowerCase()
+    );
 
     // LOAD SUPPLIERS
     const fetchSuppliers = async () => {
@@ -181,7 +172,7 @@ const SupplierReturnManagement = () => {
         }
     };
 
-    // LOAD SUPPLIER RETURN HISTORY - Search: LOAD SUPPLIER RETURN HISTORY
+    // LOAD SUPPLIER RETURN HISTORY
     const fetchReturns = async (page = currentPage) => {
         try {
             setLoading(true);
@@ -287,27 +278,19 @@ const SupplierReturnManagement = () => {
         )
     }), [returns, historyTotal]);
 
-    // LOAD ELIGIBLE DEVICES - Search: LOAD ELIGIBLE DEVICES
-    const fetchEligibleDevices = async (
-        page = devicePage,
-        search = deviceSearch,
-        status = deviceStatus
-    ) => {
+    // LOAD ELIGIBLE DEVICES
+    const fetchEligibleDevices = async (search = '') => {
         try {
             setDeviceLoading(true);
             setDeviceError('');
 
             const params = new URLSearchParams();
 
-            params.set('page', page);
-            params.set('limit', 20);
+            params.set('page', 1);
+            params.set('limit', 100);
 
             if (search.trim()) {
                 params.set('search', search.trim());
-            }
-
-            if (status) {
-                params.set('status', status);
             }
 
             const response = await fetch(
@@ -327,59 +310,110 @@ const SupplierReturnManagement = () => {
                 );
             }
 
-            // KEEP ONLY DEVICES WITH A VALID POPULATED STOCK PRODUCT
-            const eligibleUnits = Array.isArray(data.stockUnits)
-                ? data.stockUnits.filter(
-                    (unit) => unit?._id && unit?.stockItem?._id
-                )
+            const searchValue = search.trim().toLowerCase();
+
+            let eligibleUnits = Array.isArray(data.stockUnits)
+                ? data.stockUnits.filter((unit) => {
+                    if (
+                        !unit?._id ||
+                        !unit?.stockItem?._id ||
+                        !['Available', 'Assigned'].includes(unit.status)
+                    ) {
+                        return false;
+                    }
+
+                    if (!searchValue) return true;
+
+                    const productCode = String(unit.unitCode || '')
+                        .trim()
+                        .toLowerCase();
+
+                    const sku = String(unit.stockItem?.sku || '')
+                        .trim()
+                        .toLowerCase();
+
+                    const serialNumber = String(unit.serialNumber || '')
+                        .trim()
+                        .toLowerCase();
+
+                    return (
+                        productCode.includes(searchValue) ||
+                        sku.includes(searchValue) ||
+                        serialNumber.includes(searchValue)
+                    );
+                })
                 : [];
 
             setStockUnits(eligibleUnits);
 
-            setDevicePage(data.currentPage || page);
-            setDeviceTotalPages(data.totalPages || 1);
+            return eligibleUnits;
 
         } catch (error) {
             console.error('ELIGIBLE DEVICE ERROR:', error);
+
             setDeviceError(
                 error.message || 'Cannot load eligible devices.'
             );
+
+            setStockUnits([]);
+
+            return [];
 
         } finally {
             setDeviceLoading(false);
         }
     };
 
-    // OPEN CREATE RETURN MODAL
+    // SEARCH PRODUCT BY SKU OR SERIAL NUMBER
+    const handleSkuSearch = async () => {
+        const searchValue = skuSearch.trim();
+
+        setFormError('');
+        setDeviceError('');
+        setSelectedProduct(null);
+        setSelectedUnitIds([]);
+        setStockUnits([]);
+
+        if (!searchValue) {
+            setFormError(
+                'Please enter SKU / Product Code / Serial Number.'
+            );
+            return;
+        }
+
+        const units = await fetchEligibleDevices(searchValue);
+
+        if (units.length > 0) {
+            setSelectedProduct(units[0].stockItem);
+        } else {
+            setSelectedProduct(null);
+
+            setDeviceError(
+                'No Available or Assigned devices found for this SKU or Serial Number.'
+            );
+        }
+    };
+
+    // OPEN CREATE RETURN FORM
     const openCreateModal = () => {
-        setSupplierId('');
+        setSkuSearch('');
+        setSelectedProduct(null);
+
         setReturnDate(getToday());
         setReturnReason('');
-        setReferenceNumber('');
         setNotes('');
 
-        setDeviceSearch('');
-        setDeviceStatus('');
-        setDevicePage(1);
+        setStockUnits([]);
         setSelectedUnitIds([]);
-
-        setProblemDescription('');
-        setTechnicalInspection('');
-        setWarrantyStatus('Pending');
-        setWarrantyReference('');
-        setWarrantyNotes('');
-        setItemNotes('');
 
         setFormError('');
         setDeviceError('');
         setSuccessMessage('');
 
         setShowCreateModal(true);
-
-        fetchEligibleDevices(1, '', '');
     };
 
-    // CLOSE CREATE MODAL
+    // CLOSE CREATE RETURN FORM
     const closeCreateModal = () => {
         if (submitting) return;
         setShowCreateModal(false);
@@ -396,33 +430,14 @@ const SupplierReturnManagement = () => {
         });
     };
 
-    // SELECT ALL DEVICES ON CURRENT PAGE
-    const toggleSelectCurrentPage = () => {
-        const currentIds = stockUnits.map((unit) => unit._id);
-
-        const allSelected = currentIds.every(
-            (id) => selectedUnitIds.includes(id)
-        );
-
-        if (allSelected) {
-            setSelectedUnitIds((previous) =>
-                previous.filter((id) => !currentIds.includes(id))
-            );
-        } else {
-            setSelectedUnitIds((previous) => [
-                ...new Set([...previous, ...currentIds])
-            ]);
-        }
-    };
-
-    // SUBMIT SUPPLIER RETURN - Search: SUBMIT SUPPLIER RETURN
+    // SUBMIT SUPPLIER RETURN
     const handleCreateReturn = async (e) => {
         e.preventDefault();
 
         setFormError('');
 
-        if (!supplierId) {
-            setFormError('Please select a supplier.');
+        if (!selectedProduct?._id) {
+            setFormError('Please search and select a valid product first.');
             return;
         }
 
@@ -437,38 +452,53 @@ const SupplierReturnManagement = () => {
         }
 
         if (!returnReason.trim()) {
-            setFormError('Please enter return reason.');
+            setFormError('Please select a return reason.');
             return;
         }
 
-        if (!Array.isArray(selectedUnitIds) || selectedUnitIds.some((id) => !id)) {
-            setFormError('Selected device information is invalid. Please select the devices again.');
+        const selectedUnits = stockUnits.filter(
+            (unit) => selectedUnitIds.includes(unit._id)
+        );
+
+        if (selectedUnits.length !== selectedUnitIds.length) {
+            setFormError(
+                'Some selected devices are no longer available. Please search the product again.'
+            );
+            return;
+        }
+
+        if (
+            selectedUnits.some(
+                (unit) => !['Available', 'Assigned'].includes(unit.status)
+            )
+        ) {
+            setFormError(
+                'Only Available and Assigned devices can be returned.'
+            );
             return;
         }
 
         try {
             setSubmitting(true);
 
+            const matchedSupplier = suppliers.find(
+                (supplier) =>
+                    supplier.companyName?.trim().toLowerCase() ===
+                    selectedProduct.supplierName?.trim().toLowerCase()
+            );
+
             const payload = {
-                supplierId,
+                ...(matchedSupplier?._id
+                    ? { supplierId: matchedSupplier._id }
+                    : {}),
                 returnDate,
                 returnReason: returnReason.trim(),
-                referenceNumber: referenceNumber.trim(),
                 notes: notes.trim(),
 
                 items: selectedUnitIds.map((stockUnitId) => ({
                     stockUnitId,
                     returnReason: returnReason.trim(),
-                    problemDescription: problemDescription.trim(),
-                    technicalInspection: technicalInspection.trim(),
-
-                    warrantyClaim: {
-                        status: warrantyStatus,
-                        referenceNumber: warrantyReference.trim(),
-                        notes: warrantyNotes.trim()
-                    },
-
-                    notes: itemNotes.trim()
+                    notes: notes.trim()
                 }))
             };
 
@@ -488,6 +518,9 @@ const SupplierReturnManagement = () => {
 
             setShowCreateModal(false);
             setSelectedUnitIds([]);
+            setSelectedProduct(null);
+            setStockUnits([]);
+
             setSuccessMessage(
                 `Supplier Return ${data.return?.returnNumber || ''} created successfully.`
             );
@@ -504,7 +537,7 @@ const SupplierReturnManagement = () => {
         }
     };
 
-    // VIEW RETURN DETAILS - Search: VIEW SUPPLIER RETURN DETAILS
+    // VIEW RETURN DETAILS
     const handleViewDetails = async (returnId) => {
         try {
             setSelectedReturn(returnId);
@@ -536,6 +569,7 @@ const SupplierReturnManagement = () => {
 
         } catch (error) {
             console.error('RETURN DETAILS ERROR:', error);
+
             setDetailsError(
                 error.message || 'Unable to load return details.'
             );
@@ -545,7 +579,7 @@ const SupplierReturnManagement = () => {
         }
     };
 
-    // PRINT SUPPLIER RETURN DOCUMENT - Search: PRINT SUPPLIER RETURN DOCUMENT
+    // PRINT SUPPLIER RETURN DOCUMENT
     const handlePrintReturn = () => {
         if (!returnDetails) return;
 
@@ -566,7 +600,7 @@ const SupplierReturnManagement = () => {
                     <td>${escapeHtml(product.assetId || item.asset?.assetId || 'N/A')}</td>
                     <td>${escapeHtml(previous.departmentName || getRelationName(previous.department))}</td>
                     <td>${escapeHtml(previous.roomName || getRelationName(previous.room))}</td>
-                    <td>${escapeHtml(item.returnReason || 'N/A')}</td>
+                    <td>${escapeHtml(item.returnReason || returnData.returnReason || 'N/A')}</td>
                 </tr>
             `;
         }).join('');
@@ -649,10 +683,10 @@ const SupplierReturnManagement = () => {
                         <p><strong>Supplier:</strong> ${escapeHtml(supplier.companyName || 'N/A')}</p>
                         <p><strong>Contact Person:</strong> ${escapeHtml(supplier.contactPerson || 'N/A')}</p>
                         <p><strong>Phone:</strong> ${escapeHtml(supplier.phone || 'N/A')}</p>
+                        <p><strong>Address:</strong> ${escapeHtml(supplier.address || 'N/A')}</p>
                     </div>
                     <div>
                         <p><strong>Return Date:</strong> ${escapeHtml(formatDate(returnData.returnDate))}</p>
-                        <p><strong>Reference Number:</strong> ${escapeHtml(returnData.referenceNumber || 'N/A')}</p>
                         <p><strong>Total Devices:</strong> ${escapeHtml(returnData.totalItems || 0)}</p>
                         <p><strong>Status:</strong> ${escapeHtml(returnData.status || 'N/A')}</p>
                     </div>
@@ -713,26 +747,21 @@ const SupplierReturnManagement = () => {
     const selectedCount = selectedUnitIds.length;
 
     return (
-        <div className="flex min-h-screen bg-slate-100">
+        <div className="min-h-screen bg-slate-100 flex">
             <AdminSidebar />
 
-            {/* RESPONSIVE MAIN CONTENT */}
-            <main className="min-w-0 w-full flex-1 px-4 pb-6 pt-20 sm:px-6 sm:pb-8 sm:pt-20 lg:ml-64 lg:px-8 lg:py-8">
+            <main className="flex-1 lg:ml-64 min-w-0">
 
-                {/* PAGE HEADER */}
-                <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-                    <div>
-                        <p className="mb-1 text-xs font-bold uppercase tracking-widest text-blue-600">
-                            UMC / ADMIN
+                {/* TOPBAR - DASHBOARD STYLE */}
+                <header className="bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 sticky top-0 z-20">
+                    <div className="min-w-0">
+                        <p className="text-[10px] sm:text-xs text-slate-400 font-semibold tracking-wide">
+                            UNITED MEDICAL COLLEGE / ADMIN
                         </p>
 
-                        <h1 className="text-2xl font-bold text-slate-800 sm:text-3xl">
+                        <h2 className="text-lg sm:text-xl font-bold text-slate-800 mt-1 truncate">
                             Supplier Return Management
-                        </h1>
-
-                        <p className="mt-1 text-sm text-slate-500">
-                            Manage devices and products returned to suppliers.
-                        </p>
+                        </h2>
                     </div>
 
                     <div className="flex flex-col gap-2 sm:flex-row">
@@ -740,912 +769,685 @@ const SupplierReturnManagement = () => {
                             type="button"
                             onClick={() => fetchReturns(1)}
                             disabled={loading}
-                            className="w-full rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60 sm:w-auto"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 disabled:opacity-60 sm:w-auto"
                         >
                             {loading ? 'Refreshing...' : '↻ Refresh'}
                         </button>
 
                         <button
                             type="button"
-                            onClick={openCreateModal}
-                            className="w-full rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 sm:w-auto"
+                            onClick={showCreateModal ? closeCreateModal : openCreateModal}
+                            className="w-full rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 sm:w-auto"
                         >
-                            + New Supplier Return
+                            {showCreateModal ? '− Close Return Form' : '+ New Supplier Return'}
                         </button>
                     </div>
-                </div>
+                </header>
 
-                {/* SUCCESS MESSAGE */}
-                {successMessage && (
-                    <div className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                        <p className="text-sm font-medium text-emerald-700">
-                            {successMessage}
-                        </p>
+                {/* PAGE CONTENT */}
+                <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto">
 
-                        <button
-                            type="button"
-                            onClick={() => setSuccessMessage('')}
-                            className="text-lg text-emerald-700"
-                        >
-                            ×
-                        </button>
-                    </div>
-                )}
-
-                {/* ERROR MESSAGE */}
-                {error && (
-                    <div className="mb-6 flex flex-col justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-center">
-                        <p className="text-sm text-red-700">{error}</p>
-
-                        <button
-                            type="button"
-                            onClick={() => fetchReturns(1)}
-                            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
-                        >
-                            Try Again
-                        </button>
-                    </div>
-                )}
-
-                {/* STATISTICS */}
-                <div className="mb-7 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-
-                    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <p className="text-sm font-medium text-slate-500">
-                            Total Return Records
-                        </p>
-                        <h2 className="mt-2 text-3xl font-bold text-slate-800">
-                            {stats.total}
-                        </h2>
-                    </div>
-
-                    <div className="rounded-xl border border-emerald-100 bg-white p-5 shadow-sm">
-                        <p className="text-sm font-medium text-emerald-600">
-                            Completed (Current Page)
-                        </p>
-                        <h2 className="mt-2 text-3xl font-bold text-emerald-700">
-                            {stats.completed}
-                        </h2>
-                    </div>
-
-                    <div className="rounded-xl border border-red-100 bg-white p-5 shadow-sm">
-                        <p className="text-sm font-medium text-red-600">
-                            Cancelled (Current Page)
-                        </p>
-                        <h2 className="mt-2 text-3xl font-bold text-red-700">
-                            {stats.cancelled}
-                        </h2>
-                    </div>
-
-                    <div className="rounded-xl border border-blue-100 bg-white p-5 shadow-sm">
-                        <p className="text-sm font-medium text-blue-600">
-                            Devices (Current Page)
-                        </p>
-                        <h2 className="mt-2 text-3xl font-bold text-blue-700">
-                            {stats.devices}
-                        </h2>
-                    </div>
-
-                </div>
-
-                {/* SUPPLIER RETURN HISTORY */}
-                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-
-                    <div className="border-b border-slate-200 p-4 sm:p-5">
-
-                        <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-                            <div>
-                                <h2 className="text-lg font-bold text-slate-800">
-                                    Supplier Return History
-                                </h2>
-
-                                <p className="mt-1 text-xs text-slate-500">
-                                    View and manage all completed supplier return records.
-                                </p>
-                            </div>
-
-                            <span className="text-sm font-semibold text-slate-600">
-                                Total Records: {historyTotal}
-                            </span>
-                        </div>
-
-                        {/* SEARCH AND FILTERS */}
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-
-                            <input
-                                type="text"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') applyFilters();
-                                }}
-                                placeholder="Search Return No, Supplier, Reference..."
-                                className="w-full min-w-0 rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                            />
-
-                            <select
-                                value={supplierFilter}
-                                onChange={(e) => setSupplierFilter(e.target.value)}
-                                className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                            >
-                                <option value="">All Suppliers</option>
-
-                                {suppliers.map((supplier) => (
-                                    <option
-                                        key={supplier._id}
-                                        value={supplier._id}
-                                    >
-                                        {supplier.companyName}
-                                    </option>
-                                ))}
-                            </select>
-
-                            <select
-                                value={statusFilter}
-                                onChange={(e) => setStatusFilter(e.target.value)}
-                                className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                            >
-                                <option value="">All Statuses</option>
-                                <option value="Completed">Completed</option>
-                                <option value="Cancelled">Cancelled</option>
-                            </select>
-
-                            <div>
-                                <label className="mb-1 block text-xs font-semibold text-slate-500">
-                                    Return Date From
-                                </label>
-                                <input
-                                    type="date"
-                                    value={dateFrom}
-                                    onChange={(e) => setDateFrom(e.target.value)}
-                                    className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="mb-1 block text-xs font-semibold text-slate-500">
-                                    Return Date To
-                                </label>
-                                <input
-                                    type="date"
-                                    value={dateTo}
-                                    min={dateFrom || undefined}
-                                    onChange={(e) => setDateTo(e.target.value)}
-                                    className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                />
-                            </div>
-
-                            <div className="flex items-end gap-2">
-                                <button
-                                    type="button"
-                                    onClick={applyFilters}
-                                    className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
-                                >
-                                    Search
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={clearFilters}
-                                    className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-                                >
-                                    Clear
-                                </button>
-                            </div>
-
-                        </div>
-
-                    </div>
-
-                    {/* HISTORY TABLE */}
-                    <div className="overflow-x-auto">
-
-                        <table className="w-full min-w-[900px] text-left">
-
-                            <thead className="bg-slate-50">
-                                <tr className="border-b border-slate-200">
-
-                                    <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
-                                        Return Number
-                                    </th>
-
-                                    <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
-                                        Supplier
-                                    </th>
-
-                                    <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
-                                        Return Date
-                                    </th>
-
-                                    <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
-                                        Total Devices
-                                    </th>
-
-                                    <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
-                                        Prepared By
-                                    </th>
-
-                                    <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
-                                        Status
-                                    </th>
-
-                                    <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">
-                                        Action
-                                    </th>
-
-                                </tr>
-                            </thead>
-
-                            <tbody className="divide-y divide-slate-100">
-
-                                {loading ? (
-                                    <tr>
-                                        <td colSpan="7" className="px-5 py-12 text-center text-sm text-slate-500">
-                                            Loading supplier return history...
-                                        </td>
-                                    </tr>
-                                ) : returns.length === 0 ? (
-                                    <tr>
-                                        <td colSpan="7" className="px-5 py-12 text-center">
-                                            <p className="font-semibold text-slate-600">
-                                                No supplier returns found
-                                            </p>
-
-                                            <p className="mt-1 text-sm text-slate-400">
-                                                Supplier return records will appear here after a device is returned to a supplier.
-                                            </p>
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    returns.map((item) => (
-                                        <tr
-                                            key={item._id}
-                                            className="transition-colors hover:bg-slate-50"
-                                        >
-
-                                            <td className="px-5 py-4">
-                                                <span className="font-semibold text-blue-700">
-                                                    {item.returnNumber || 'N/A'}
-                                                </span>
-
-                                                {item.referenceNumber && (
-                                                    <p className="mt-1 text-xs text-slate-400">
-                                                        Ref: {item.referenceNumber}
-                                                    </p>
-                                                )}
-                                            </td>
-
-                                            <td className="px-5 py-4">
-                                                <p className="font-semibold text-slate-800">
-                                                    {item.supplierDetails?.companyName ||
-                                                        item.supplier?.companyName ||
-                                                        'N/A'}
-                                                </p>
-
-                                                <p className="mt-1 text-xs text-slate-500">
-                                                    {item.supplierDetails?.phone ||
-                                                        item.supplier?.phone ||
-                                                        ''}
-                                                </p>
-                                            </td>
-
-                                            <td className="px-5 py-4 text-sm text-slate-600">
-                                                {formatDate(item.returnDate)}
-                                            </td>
-
-                                            <td className="px-5 py-4">
-                                                <span className="font-semibold text-slate-800">
-                                                    {item.totalItems || 0}
-                                                </span>
-                                            </td>
-
-                                            <td className="px-5 py-4 text-sm text-slate-600">
-                                                {item.preparedBy?.name ||
-                                                    item.preparedBy?.email ||
-                                                    'N/A'}
-                                            </td>
-
-                                            <td className="px-5 py-4">
-                                                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getStatusStyle(item.status)}`}>
-                                                    {item.status || 'Unknown'}
-                                                </span>
-                                            </td>
-
-                                            <td className="px-5 py-4">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleViewDetails(item._id)}
-                                                    className="whitespace-nowrap rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50"
-                                                >
-                                                    View Details
-                                                </button>
-                                            </td>
-
-                                        </tr>
-                                    ))
-                                )}
-
-                            </tbody>
-                        </table>
-
-                    </div>
-
-                    {/* HISTORY PAGINATION */}
-                    <div className="flex flex-col justify-between gap-3 border-t border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
-
-                        <p className="text-sm text-slate-500">
-                            Page {currentPage} of {totalPages}
-                        </p>
-
-                        <div className="flex gap-2">
-                            <button
-                                type="button"
-                                disabled={currentPage <= 1 || loading}
-                                onClick={() => fetchReturns(currentPage - 1)}
-                                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                                Previous
-                            </button>
+                    {/* SUCCESS MESSAGE */}
+                    {successMessage && (
+                        <div className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                            <p className="text-sm font-medium text-emerald-700">
+                                {successMessage}
+                            </p>
 
                             <button
                                 type="button"
-                                disabled={currentPage >= totalPages || loading}
-                                onClick={() => fetchReturns(currentPage + 1)}
-                                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                                Next
-                            </button>
-                        </div>
-
-                    </div>
-
-                </div>
-
-            </main>
-
-            {/* CREATE SUPPLIER RETURN MODAL */}
-            {showCreateModal && (
-                <div
-                    className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm sm:p-5"
-                    onClick={closeCreateModal}
-                >
-                    <div
-                        className="max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-3xl border border-white/50 bg-white shadow-[0_25px_80px_-20px_rgba(15,23,42,0.55)]"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-
-                        {/* MODAL HEADER */}
-                        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-blue-50/70 p-5 sm:p-6">
-                            <div>
-                                <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-blue-700">
-                                    UMC IT INVENTORY
-                                </p>
-
-                                <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900">
-                                    Create Supplier Return
-                                </h2>
-
-                                <p className="mt-1 text-sm text-slate-500">
-                                    Select devices and prepare a supplier return document.
-                                </p>
-                            </div>
-
-                            <button
-                                type="button"
-                                onClick={closeCreateModal}
-                                disabled={submitting}
-                                className="rounded-lg px-3 py-2 text-xl text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                                onClick={() => setSuccessMessage('')}
+                                className="text-lg text-emerald-700"
                             >
                                 ×
                             </button>
                         </div>
+                    )}
 
-                        <form onSubmit={handleCreateReturn}>
+                    {/* ERROR MESSAGE */}
+                    {error && (
+                        <div className="mb-6 flex flex-col justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-center">
+                            <p className="text-sm text-red-700">{error}</p>
 
-                            <div className="space-y-5 bg-slate-50/80 p-4 sm:p-6">
+                            <button
+                                type="button"
+                                onClick={() => fetchReturns(1)}
+                                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                            >
+                                Try Again
+                            </button>
+                        </div>
+                    )}
 
-                                {/* RETURN INFORMATION */}
-                                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-                                    <div className="mb-5 flex items-center gap-3">
-                                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-sm font-extrabold text-blue-700">01</span>
-                                        <h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-800">
-                                        Return Information
-                                        </h3>
+                    {/* STATISTICS */}
+                    <div className="mb-7 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
+                            <div className="absolute left-0 top-0 h-1 w-full bg-blue-500" />
+                            <p className="text-sm font-medium text-slate-500">
+                                Total Return Records
+                            </p>
+                            <h2 className="mt-3 text-3xl font-bold text-slate-800">
+                                {stats.total}
+                            </h2>
+                        </div>
+
+                        <div className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
+                            <div className="absolute left-0 top-0 h-1 w-full bg-emerald-500" />
+                            <p className="text-sm font-medium text-emerald-600">
+                                Completed (Current Page)
+                            </p>
+                            <h2 className="mt-3 text-3xl font-bold text-emerald-700">
+                                {stats.completed}
+                            </h2>
+                        </div>
+
+                        <div className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
+                            <div className="absolute left-0 top-0 h-1 w-full bg-orange-500" />
+                            <p className="text-sm font-medium text-orange-600">
+                                Cancelled (Current Page)
+                            </p>
+                            <h2 className="mt-3 text-3xl font-bold text-orange-700">
+                                {stats.cancelled}
+                            </h2>
+                        </div>
+
+                        <div className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-6">
+                            <div className="absolute left-0 top-0 h-1 w-full bg-violet-500" />
+                            <p className="text-sm font-medium text-violet-600">
+                                Devices (Current Page)
+                            </p>
+                            <h2 className="mt-3 text-3xl font-bold text-violet-700">
+                                {stats.devices}
+                            </h2>
+                        </div>
+                    </div>
+
+                    {/* SUPPLIER RETURN HISTORY */}
+                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <div className="border-b border-slate-200 p-4 sm:p-5">
+                            <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="h-6 w-1.5 rounded-full bg-orange-500" />
+                                        <h2 className="text-lg font-bold text-slate-800">
+                                            Supplier Return History
+                                        </h2>
                                     </div>
 
-                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-
-                                        <div>
-                                            <label className="mb-1.5 block text-sm font-semibold text-slate-600">
-                                                Select Supplier *
-                                            </label>
-
-                                            <select
-                                                value={supplierId}
-                                                onChange={(e) => setSupplierId(e.target.value)}
-                                                required
-                                                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                            >
-                                                <option value="">Choose Supplier</option>
-
-                                                {suppliers.map((supplier) => (
-                                                    <option
-                                                        key={supplier._id}
-                                                        value={supplier._id}
-                                                    >
-                                                        {supplier.companyName}
-                                                    </option>
-                                                ))}
-                                            </select>
-
-                                            {suppliers.length === 0 && (
-                                                <p className="mt-1 text-xs text-amber-600">
-                                                    No active suppliers found. Add a supplier first.
-                                                </p>
-                                            )}
-                                        </div>
-
-                                        <div>
-                                            <label className="mb-1.5 block text-sm font-semibold text-slate-600">
-                                                Return Date *
-                                            </label>
-
-                                            <input
-                                                type="date"
-                                                value={returnDate}
-                                                onChange={(e) => setReturnDate(e.target.value)}
-                                                required
-                                                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="mb-1.5 block text-sm font-semibold text-slate-600">
-                                                Return Reason *
-                                            </label>
-
-                                            <select
-                                                value={returnReason}
-                                                onChange={(e) => setReturnReason(e.target.value)}
-                                                required
-                                                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                            >
-                                                <option value="">Select Return Reason</option>
-                                                <option value="Defective Product">Defective Product</option>
-                                                <option value="Warranty Claim">Warranty Claim</option>
-                                                <option value="Wrong Product Supplied">Wrong Product Supplied</option>
-                                                <option value="Damaged During Delivery">Damaged During Delivery</option>
-                                                <option value="Replacement Required">Replacement Required</option>
-                                                <option value="Other">Other</option>
-                                            </select>
-                                        </div>
-
-                                        <div>
-                                            <label className="mb-1.5 block text-sm font-semibold text-slate-600">
-                                                Reference Number
-                                            </label>
-
-                                            <input
-                                                type="text"
-                                                value={referenceNumber}
-                                                onChange={(e) => setReferenceNumber(e.target.value)}
-                                                placeholder="Invoice / Challan / Warranty Ref"
-                                                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                            />
-                                        </div>
-
-                                        <div className="sm:col-span-2">
-                                            <label className="mb-1.5 block text-sm font-semibold text-slate-600">
-                                                Return Notes
-                                            </label>
-
-                                            <textarea
-                                                value={notes}
-                                                onChange={(e) => setNotes(e.target.value)}
-                                                rows="2"
-                                                placeholder="Additional information..."
-                                                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                            />
-                                        </div>
-
-                                    </div>
-                                </section>
-
-                                {/* DEVICE SELECTION */}
-                                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-
-                                    <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-                                        <div>
-                                            <div className="flex items-center gap-3">
-                                                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-sm font-extrabold text-indigo-700">02</span>
-                                                <h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-800">
-                                                    Select Devices
-                                                </h3>
-                                            </div>
-
-                                            <p className="mt-1 text-sm text-slate-500">
-                                                Only Available, Assigned, Damaged and Under Repair devices can be returned.
-                                            </p>
-                                        </div>
-
-                                        <span className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-2.5 text-sm font-extrabold text-blue-800 shadow-sm">
-                                            Selected: {selectedCount}
-                                        </span>
-                                    </div>
-
-                                    {/* DEVICE SEARCH AND STATUS */}
-                                    <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-
-                                        <input
-                                            type="text"
-                                            value={deviceSearch}
-                                            onChange={(e) => setDeviceSearch(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    e.preventDefault();
-                                                    setDevicePage(1);
-                                                    fetchEligibleDevices(1, deviceSearch, deviceStatus);
-                                                }
-                                            }}
-                                            placeholder="Search Unit Code, Serial, SKU, Asset ID..."
-                                            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 sm:col-span-2"
-                                        />
-
-                                        <select
-                                            value={deviceStatus}
-                                            onChange={(e) => {
-                                                setDeviceStatus(e.target.value);
-                                                setDevicePage(1);
-                                                fetchEligibleDevices(1, deviceSearch, e.target.value);
-                                            }}
-                                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                        >
-                                            <option value="">All Eligible Statuses</option>
-                                            <option value="Available">Available</option>
-                                            <option value="Assigned">Assigned</option>
-                                            <option value="Damaged">Damaged</option>
-                                            <option value="Under Repair">Under Repair</option>
-                                        </select>
-
-                                    </div>
-
-                                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-
-                                        <button
-                                            type="button"
-                                            onClick={() => fetchEligibleDevices(1, deviceSearch, deviceStatus)}
-                                            disabled={deviceLoading}
-                                            className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-                                        >
-                                            Search Devices
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={toggleSelectCurrentPage}
-                                            disabled={deviceLoading || stockUnits.length === 0}
-                                            className="text-xs font-semibold text-blue-700 hover:text-blue-900 disabled:opacity-40"
-                                        >
-                                            Select / Deselect Current Page
-                                        </button>
-
-                                    </div>
-
-                                    {deviceError && (
-                                        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                                            {deviceError}
-
-                                            <button
-                                                type="button"
-                                                onClick={() => fetchEligibleDevices()}
-                                                className="ml-2 font-bold underline"
-                                            >
-                                                Retry
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {/* DEVICE TABLE */}
-                                    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-
-                                        <table className="w-full min-w-[850px] text-left">
-
-                                            <thead className="bg-slate-50">
-                                                <tr className="border-b border-slate-200">
-
-                                                    <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">
-                                                        Select
-                                                    </th>
-
-                                                    <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">
-                                                        Product
-                                                    </th>
-
-                                                    <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">
-                                                        Unit Code
-                                                    </th>
-
-                                                    <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">
-                                                        Serial Number
-                                                    </th>
-
-                                                    <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">
-                                                        Asset ID
-                                                    </th>
-
-                                                    <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">
-                                                        Status
-                                                    </th>
-
-                                                </tr>
-                                            </thead>
-
-                                            <tbody className="divide-y divide-slate-100">
-
-                                                {deviceLoading ? (
-                                                    <tr>
-                                                        <td colSpan="6" className="px-4 py-10 text-center text-sm text-slate-500">
-                                                            Loading eligible devices...
-                                                        </td>
-                                                    </tr>
-                                                ) : stockUnits.length === 0 ? (
-                                                    <tr>
-                                                        <td colSpan="6" className="px-4 py-10 text-center text-sm text-slate-500">
-                                                            No eligible devices found.
-                                                        </td>
-                                                    </tr>
-                                                ) : (
-                                                    stockUnits.map((unit) => (
-                                                        <tr
-                                                            key={unit._id}
-                                                            className="transition-colors hover:bg-blue-50/60"
-                                                        >
-
-                                                            <td className="px-4 py-3">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={selectedUnitIds.includes(unit._id)}
-                                                                    onChange={() => toggleDeviceSelection(unit._id)}
-                                                                    className="h-4 w-4 cursor-pointer accent-blue-600"
-                                                                />
-                                                            </td>
-
-                                                            <td className="px-4 py-3">
-                                                                <p className="text-sm font-semibold text-slate-800">
-                                                                    {unit.stockItem?.name || 'N/A'}
-                                                                </p>
-
-                                                                <p className="mt-1 text-sm text-slate-500">
-                                                                    {unit.stockItem?.sku || 'No SKU'}
-                                                                    {unit.stockItem?.brand
-                                                                        ? ` / ${unit.stockItem.brand}`
-                                                                        : ''}
-                                                                </p>
-                                                            </td>
-
-                                                            <td className="px-4 py-3 text-xs font-semibold text-blue-700">
-                                                                {unit.unitCode || 'N/A'}
-                                                            </td>
-
-                                                            <td className="px-4 py-3 text-sm text-slate-600">
-                                                                {unit.serialNumber || 'N/A'}
-                                                            </td>
-
-                                                            <td className="px-4 py-3 text-sm text-slate-600">
-                                                                {unit.asset?.assetId || 'Not Assigned'}
-                                                            </td>
-
-                                                            <td className="px-4 py-3">
-                                                                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusStyle(unit.status)}`}>
-                                                                    {unit.status || 'Unknown'}
-                                                                </span>
-                                                            </td>
-
-                                                        </tr>
-                                                    ))
-                                                )}
-
-                                            </tbody>
-                                        </table>
-
-                                    </div>
-
-                                    {/* DEVICE PAGINATION */}
-                                    <div className="mt-3 flex items-center justify-between gap-3">
-
-                                        <p className="text-xs text-slate-500">
-                                            Device Page {devicePage} of {deviceTotalPages}
-                                        </p>
-
-                                        <div className="flex gap-2">
-                                            <button
-                                                type="button"
-                                                disabled={devicePage <= 1 || deviceLoading}
-                                                onClick={() => fetchEligibleDevices(
-                                                    devicePage - 1,
-                                                    deviceSearch,
-                                                    deviceStatus
-                                                )}
-                                                className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 disabled:opacity-40"
-                                            >
-                                                Previous
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                disabled={devicePage >= deviceTotalPages || deviceLoading}
-                                                onClick={() => fetchEligibleDevices(
-                                                    devicePage + 1,
-                                                    deviceSearch,
-                                                    deviceStatus
-                                                )}
-                                                className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 disabled:opacity-40"
-                                            >
-                                                Next
-                                            </button>
-                                        </div>
-
-                                    </div>
-
-                                </section>
-
-                                {/* TECHNICAL AND WARRANTY INFORMATION */}
-                                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-
-                                    <div className="mb-5 flex items-center gap-3">
-                                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-sm font-extrabold text-amber-700">03</span>
-                                        <h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-800">
-                                            Technical Inspection & Warranty Information
-                                        </h3>
-                                    </div>
-
-                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-
-                                        <div className="sm:col-span-2">
-                                            <label className="mb-1.5 block text-sm font-semibold text-slate-600">
-                                                Problem Description
-                                            </label>
-
-                                            <textarea
-                                                value={problemDescription}
-                                                onChange={(e) => setProblemDescription(e.target.value)}
-                                                rows="2"
-                                                placeholder="Describe the device problem..."
-                                                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                            />
-                                        </div>
-
-                                        <div className="sm:col-span-2">
-                                            <label className="mb-1.5 block text-sm font-semibold text-slate-600">
-                                                Technical Inspection
-                                            </label>
-
-                                            <textarea
-                                                value={technicalInspection}
-                                                onChange={(e) => setTechnicalInspection(e.target.value)}
-                                                rows="2"
-                                                placeholder="Technical inspection findings..."
-                                                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="mb-1.5 block text-sm font-semibold text-slate-600">
-                                                Warranty Claim Status
-                                            </label>
-
-                                            <select
-                                                value={warrantyStatus}
-                                                onChange={(e) => setWarrantyStatus(e.target.value)}
-                                                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                            >
-                                                <option value="Not Applicable">Not Applicable</option>
-                                                <option value="Pending">Pending</option>
-                                                <option value="Submitted">Submitted</option>
-                                                <option value="Approved">Approved</option>
-                                                <option value="Rejected">Rejected</option>
-                                                <option value="Completed">Completed</option>
-                                            </select>
-                                        </div>
-
-                                        <div>
-                                            <label className="mb-1.5 block text-sm font-semibold text-slate-600">
-                                                Warranty Reference Number
-                                            </label>
-
-                                            <input
-                                                type="text"
-                                                value={warrantyReference}
-                                                onChange={(e) => setWarrantyReference(e.target.value)}
-                                                placeholder="Warranty claim reference"
-                                                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                            />
-                                        </div>
-
-                                        <div className="sm:col-span-2">
-                                            <label className="mb-1.5 block text-sm font-semibold text-slate-600">
-                                                Warranty Notes
-                                            </label>
-
-                                            <textarea
-                                                value={warrantyNotes}
-                                                onChange={(e) => setWarrantyNotes(e.target.value)}
-                                                rows="2"
-                                                placeholder="Warranty claim details..."
-                                                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                            />
-                                        </div>
-
-                                        <div className="sm:col-span-2">
-                                            <label className="mb-1.5 block text-sm font-semibold text-slate-600">
-                                                Device Notes
-                                            </label>
-
-                                            <textarea
-                                                value={itemNotes}
-                                                onChange={(e) => setItemNotes(e.target.value)}
-                                                rows="2"
-                                                placeholder="Additional device notes..."
-                                                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
-                                            />
-                                        </div>
-
-                                    </div>
-
-                                    <p className="mt-3 text-xs text-slate-500">
-                                        The technical and warranty information above will be applied to every selected device in this return document.
+                                    <p className="mt-2 text-xs text-slate-500 ml-4">
+                                        View and manage all completed supplier return records.
                                     </p>
-
-                                </section>
-
-                                {/* FORM ERROR */}
-                                {formError && (
-                                    <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                                        {formError}
-                                    </div>
-                                )}
-
-                            </div>
-
-                            {/* MODAL FOOTER */}
-                            <div className="sticky bottom-0 flex flex-col-reverse justify-between gap-3 border-t border-slate-200 bg-white/95 p-5 shadow-[0_-8px_24px_-22px_rgba(15,23,42,0.5)] backdrop-blur sm:flex-row sm:items-center">
-
-                                <p className="text-sm font-semibold text-slate-600">
-                                    Selected Devices: <span className="text-blue-700">{selectedCount}</span>
-                                </p>
-
-                                <div className="flex flex-col gap-2 sm:flex-row">
-                                    <button
-                                        type="button"
-                                        onClick={closeCreateModal}
-                                        disabled={submitting}
-                                        className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-                                    >
-                                        Cancel
-                                    </button>
-
-                                    <button
-                                        type="submit"
-                                        disabled={
-                                            submitting ||
-                                            selectedCount === 0 ||
-                                            suppliers.length === 0
-                                        }
-                                        className="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition hover:-translate-y-0.5 hover:from-blue-700 hover:to-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-                                    >
-                                        {submitting
-                                            ? 'Processing Return...'
-                                            : `Confirm Return (${selectedCount})`}
-                                    </button>
                                 </div>
 
+                                <span className="text-sm font-semibold text-slate-600">
+                                    Total Records: {historyTotal}
+                                </span>
                             </div>
 
-                        </form>
+                            {/* SEARCH AND FILTERS */}
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                                <input
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') applyFilters();
+                                    }}
+                                    placeholder="Search Return No, Supplier, Reference..."
+                                    className="w-full min-w-0 rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                />
 
+                                <select
+                                    value={supplierFilter}
+                                    onChange={(e) => setSupplierFilter(e.target.value)}
+                                    className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                                >
+                                    <option value="">All Suppliers</option>
+
+                                    {suppliers.map((supplier) => (
+                                        <option key={supplier._id} value={supplier._id}>
+                                            {supplier.companyName}
+                                        </option>
+                                    ))}
+                                </select>
+
+                                <select
+                                    value={statusFilter}
+                                    onChange={(e) => setStatusFilter(e.target.value)}
+                                    className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                                >
+                                    <option value="">All Statuses</option>
+                                    <option value="Completed">Completed</option>
+                                    <option value="Cancelled">Cancelled</option>
+                                </select>
+
+                                <div>
+                                    <label className="mb-1 block text-xs font-semibold text-slate-500">
+                                        Return Date From
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={dateFrom}
+                                        onChange={(e) => setDateFrom(e.target.value)}
+                                        className="w-full min-w-0 rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="mb-1 block text-xs font-semibold text-slate-500">
+                                        Return Date To
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={dateTo}
+                                        min={dateFrom || undefined}
+                                        onChange={(e) => setDateTo(e.target.value)}
+                                        className="w-full min-w-0 rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                                    />
+                                </div>
+
+                                <div className="flex items-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={applyFilters}
+                                        className="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+                                    >
+                                        Search
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={clearFilters}
+                                        className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                                    >
+                                        Clear
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* HISTORY TABLE */}
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[900px] text-left">
+                                <thead className="bg-slate-50">
+                                    <tr className="border-b border-slate-200">
+                                        <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Return Number</th>
+                                        <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Supplier</th>
+                                        <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Return Date</th>
+                                        <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Total Devices</th>
+                                        <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Prepared By</th>
+                                        <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Status</th>
+                                        <th className="px-5 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Action</th>
+                                    </tr>
+                                </thead>
+
+                                <tbody className="divide-y divide-slate-100">
+                                    {loading ? (
+                                        <tr>
+                                            <td colSpan="7" className="px-5 py-12 text-center text-sm text-slate-500">
+                                                Loading supplier return history...
+                                            </td>
+                                        </tr>
+                                    ) : returns.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="7" className="px-5 py-12 text-center">
+                                                <p className="font-semibold text-slate-600">
+                                                    No supplier returns found
+                                                </p>
+                                                <p className="mt-1 text-sm text-slate-400">
+                                                    Supplier return records will appear here after a device is returned to a supplier.
+                                                </p>
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        returns.map((item) => (
+                                            <tr key={item._id} className="transition-colors hover:bg-slate-50">
+                                                <td className="px-5 py-4">
+                                                    <span className="font-semibold text-blue-700">
+                                                        {item.returnNumber || 'N/A'}
+                                                    </span>
+
+                                                    {item.referenceNumber && (
+                                                        <p className="mt-1 text-xs text-slate-400">
+                                                            Ref: {item.referenceNumber}
+                                                        </p>
+                                                    )}
+                                                </td>
+
+                                                <td className="px-5 py-4">
+                                                    <p className="font-semibold text-slate-800">
+                                                        {item.supplierDetails?.companyName ||
+                                                            item.supplier?.companyName ||
+                                                            'N/A'}
+                                                    </p>
+                                                    <p className="mt-1 text-xs text-slate-500">
+                                                        {item.supplierDetails?.phone ||
+                                                            item.supplier?.phone || ''}
+                                                    </p>
+                                                </td>
+
+                                                <td className="px-5 py-4 text-sm text-slate-600">
+                                                    {formatDate(item.returnDate)}
+                                                </td>
+
+                                                <td className="px-5 py-4">
+                                                    <span className="font-semibold text-slate-800">
+                                                        {item.totalItems || 0}
+                                                    </span>
+                                                </td>
+
+                                                <td className="px-5 py-4 text-sm text-slate-600">
+                                                    {item.preparedBy?.name ||
+                                                        item.preparedBy?.email || 'N/A'}
+                                                </td>
+
+                                                <td className="px-5 py-4">
+                                                    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getStatusStyle(item.status)}`}>
+                                                        {item.status || 'Unknown'}
+                                                    </span>
+                                                </td>
+
+                                                <td className="px-5 py-4">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleViewDetails(item._id)}
+                                                        className="whitespace-nowrap rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50"
+                                                    >
+                                                        View Details
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* HISTORY PAGINATION */}
+                        <div className="flex flex-col justify-between gap-3 border-t border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
+                            <p className="text-sm text-slate-500">
+                                Page {currentPage} of {totalPages}
+                            </p>
+
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    disabled={currentPage <= 1 || loading}
+                                    onClick={() => fetchReturns(currentPage - 1)}
+                                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                    Previous
+                                </button>
+
+                                <button
+                                    type="button"
+                                    disabled={currentPage >= totalPages || loading}
+                                    onClick={() => fetchReturns(currentPage + 1)}
+                                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
                     </div>
+
+                    {/* CREATE SUPPLIER RETURN FORM - INLINE PAGE SECTION */}
+                    {showCreateModal && (
+                        <div className="mt-7 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+                            {/* FORM HEADER */}
+                            <div className="flex flex-col justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-blue-50 via-white to-blue-50 p-5 sm:flex-row sm:items-center sm:p-6">
+                                <div>
+                                    <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-blue-700">
+                                        UMC IT INVENTORY
+                                    </p>
+
+                                    <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900">
+                                        Create Supplier Return
+                                    </h2>
+
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        Search product, select devices and confirm return.
+                                    </p>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={closeCreateModal}
+                                    disabled={submitting}
+                                    className="self-start rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 sm:self-center"
+                                >
+                                    Close Form ×
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleCreateReturn}>
+                                <div className="space-y-5 bg-slate-50/80 p-4 sm:p-6">
+
+                                    {/* PRODUCT SEARCH */}
+                                    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                                        <div className="mb-5 flex items-center gap-3">
+                                            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-sm font-extrabold text-blue-700">
+                                                01
+                                            </span>
+
+                                            <h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-800">
+                                                Search Product
+                                            </h3>
+                                        </div>
+
+                                        <label className="mb-1.5 block text-sm font-semibold text-slate-600">
+                                            SKU / Product Code / Serial Number *
+                                        </label>
+
+                                        <div className="flex flex-col gap-2 sm:flex-row">
+                                            <input
+                                                type="text"
+                                                value={skuSearch}
+                                                onChange={(e) => setSkuSearch(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        handleSkuSearch();
+                                                    }
+                                                }}
+                                                placeholder="Enter or scan SKU / Product Code / Serial Number..."
+                                                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                                            />
+
+                                            <button
+                                                type="button"
+                                                onClick={handleSkuSearch}
+                                                disabled={deviceLoading}
+                                                className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                                            >
+                                                {deviceLoading ? 'Searching...' : 'Search Product'}
+                                            </button>
+                                        </div>
+
+                                        {deviceError && (
+                                            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                                                {deviceError}
+                                            </div>
+                                        )}
+
+                                        {selectedProduct && (
+                                            <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/70 p-4">
+                                                <div className="mb-3 flex items-center justify-between gap-2">
+                                                    <h4 className="font-bold text-slate-800">
+                                                        Product Information
+                                                    </h4>
+
+                                                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                                                        Product Found
+                                                    </span>
+                                                </div>
+
+                                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                                    <div>
+                                                        <p className="text-xs text-slate-500">Product Name</p>
+                                                        <p className="font-semibold text-slate-800">
+                                                            {selectedProduct.name || 'N/A'}
+                                                        </p>
+                                                    </div>
+
+                                                    <div>
+                                                        <p className="text-xs text-slate-500">SKU / Product Code</p>
+                                                        <p className="font-semibold text-blue-700">
+                                                            {selectedProduct.sku || 'N/A'}
+                                                        </p>
+                                                    </div>
+
+                                                    <div>
+                                                        <p className="text-xs text-slate-500">Brand</p>
+                                                        <p className="font-semibold text-slate-800">
+                                                            {selectedProduct.brand || 'N/A'}
+                                                        </p>
+                                                    </div>
+
+                                                    <div>
+                                                        <p className="text-xs text-slate-500">Model</p>
+                                                        <p className="font-semibold text-slate-800">
+                                                            {selectedProduct.model || 'N/A'}
+                                                        </p>
+                                                    </div>
+
+                                                    <div>
+                                                        <p className="text-xs text-slate-500">Category</p>
+                                                        <p className="font-semibold text-slate-800">
+                                                            {selectedProduct.category || 'N/A'}
+                                                        </p>
+                                                    </div>
+
+                                                    <div>
+                                                        <p className="text-xs text-slate-500">Supplier Name</p>
+                                                        <p className="font-bold text-violet-700">
+                                                            {selectedSupplier?.companyName ||
+                                                                selectedProduct.supplierName || 'N/A'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </section>
+
+                                    {/* DEVICE SELECTION */}
+                                    {selectedProduct && (
+                                        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                                            <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                                                <div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-sm font-extrabold text-violet-700">
+                                                            02
+                                                        </span>
+
+                                                        <h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-800">
+                                                            Select Devices
+                                                        </h3>
+                                                    </div>
+
+                                                    <p className="mt-1 text-sm text-slate-500">
+                                                        Select the individual devices you want to return.
+                                                    </p>
+                                                </div>
+
+                                                <span className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-2.5 text-sm font-extrabold text-blue-800 shadow-sm">
+                                                    Selected: {selectedCount}
+                                                </span>
+                                            </div>
+
+                                            <div className="mb-3 flex flex-wrap gap-3 text-xs text-slate-500">
+                                                <span className="flex items-center gap-1.5">
+                                                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                                                    Available
+                                                </span>
+
+                                                <span className="flex items-center gap-1.5">
+                                                    <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
+                                                    Assigned
+                                                </span>
+                                            </div>
+
+                                            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+                                                <table className="w-full min-w-[750px] text-left">
+                                                    <thead className="bg-slate-50">
+                                                        <tr className="border-b border-slate-200">
+                                                            <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">
+                                                                Select
+                                                            </th>
+                                                            <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">
+                                                                Unit Code
+                                                            </th>
+                                                            <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">
+                                                                Serial Number
+                                                            </th>
+                                                            <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">
+                                                                Asset ID
+                                                            </th>
+                                                            <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">
+                                                                Status
+                                                            </th>
+                                                        </tr>
+                                                    </thead>
+
+                                                    <tbody className="divide-y divide-slate-100">
+                                                        {deviceLoading ? (
+                                                            <tr>
+                                                                <td colSpan="5" className="px-4 py-10 text-center text-sm text-slate-500">
+                                                                    Loading eligible devices...
+                                                                </td>
+                                                            </tr>
+                                                        ) : stockUnits.length === 0 ? (
+                                                            <tr>
+                                                                <td colSpan="5" className="px-4 py-10 text-center text-sm text-slate-500">
+                                                                    No Available or Assigned devices found.
+                                                                </td>
+                                                            </tr>
+                                                        ) : (
+                                                            stockUnits.map((unit) => (
+                                                                <tr
+                                                                    key={unit._id}
+                                                                    className="transition-colors hover:bg-blue-50/60"
+                                                                >
+                                                                    <td className="px-4 py-3">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={selectedUnitIds.includes(unit._id)}
+                                                                            onChange={() => toggleDeviceSelection(unit._id)}
+                                                                            className="h-4 w-4 cursor-pointer accent-blue-600"
+                                                                        />
+                                                                    </td>
+
+                                                                    <td className="px-4 py-3 text-xs font-semibold text-blue-700">
+                                                                        {unit.unitCode || 'N/A'}
+                                                                    </td>
+
+                                                                    <td className="px-4 py-3 text-sm text-slate-600">
+                                                                        {unit.serialNumber || 'N/A'}
+                                                                    </td>
+
+                                                                    <td className="px-4 py-3 text-sm text-slate-600">
+                                                                        {unit.asset?.assetId || 'Not Assigned'}
+                                                                    </td>
+
+                                                                    <td className="px-4 py-3">
+                                                                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusStyle(unit.status)}`}>
+                                                                            {unit.status || 'Unknown'}
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                            ))
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </section>
+                                    )}
+
+                                    {/* RETURN INFORMATION */}
+                                    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                                        <div className="mb-5 flex items-center gap-3">
+                                            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-sm font-extrabold text-orange-700">
+                                                03
+                                            </span>
+
+                                            <h3 className="text-sm font-extrabold uppercase tracking-wide text-slate-800">
+                                                Return Information
+                                            </h3>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                            <div>
+                                                <label className="mb-1.5 block text-sm font-semibold text-slate-600">
+                                                    Return Date *
+                                                </label>
+
+                                                <input
+                                                    type="date"
+                                                    value={returnDate}
+                                                    onChange={(e) => setReturnDate(e.target.value)}
+                                                    required
+                                                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="mb-1.5 block text-sm font-semibold text-slate-600">
+                                                    Return Reason *
+                                                </label>
+
+                                                <select
+                                                    value={returnReason}
+                                                    onChange={(e) => setReturnReason(e.target.value)}
+                                                    required
+                                                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                                                >
+                                                    <option value="">Select Return Reason</option>
+                                                    <option value="Defective Product">Defective Product</option>
+                                                    <option value="Warranty Claim">Warranty Claim</option>
+                                                    <option value="Wrong Product Supplied">Wrong Product Supplied</option>
+                                                    <option value="Damaged During Delivery">Damaged During Delivery</option>
+                                                    <option value="Replacement Required">Replacement Required</option>
+                                                    <option value="Other">Other</option>
+                                                </select>
+                                            </div>
+
+                                            <div className="sm:col-span-2">
+                                                <label className="mb-1.5 block text-sm font-semibold text-slate-600">
+                                                    Additional Notes (Optional)
+                                                </label>
+
+                                                <textarea
+                                                    value={notes}
+                                                    onChange={(e) => setNotes(e.target.value)}
+                                                    rows="3"
+                                                    placeholder="Write any additional information..."
+                                                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500"
+                                                />
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    {/* FORM ERROR */}
+                                    {formError && (
+                                        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                                            {formError}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* FORM FOOTER */}
+                                <div className="flex flex-col-reverse justify-between gap-3 border-t border-slate-200 bg-white p-5 sm:flex-row sm:items-center">
+                                    <p className="text-sm font-semibold text-slate-600">
+                                        Selected Devices: <span className="text-blue-700">{selectedCount}</span>
+                                    </p>
+
+                                    <div className="flex flex-col gap-2 sm:flex-row">
+                                        <button
+                                            type="button"
+                                            onClick={closeCreateModal}
+                                            disabled={submitting}
+                                            className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                                        >
+                                            Cancel
+                                        </button>
+
+                                        <button
+                                            type="submit"
+                                            disabled={submitting || !selectedProduct || selectedCount === 0}
+                                            className="rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition hover:from-blue-700 hover:to-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {submitting
+                                                ? 'Processing Return...'
+                                                : `Confirm Return (${selectedCount})`}
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    )}
                 </div>
-            )}
+            </main>
 
             {/* SUPPLIER RETURN DETAILS MODAL */}
             {selectedReturn && (
@@ -1657,7 +1459,6 @@ const SupplierReturnManagement = () => {
                         className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
                         onClick={(e) => e.stopPropagation()}
                     >
-
                         {/* DETAILS HEADER */}
                         <div className="flex flex-col justify-between gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center">
                             <div>
@@ -1675,7 +1476,7 @@ const SupplierReturnManagement = () => {
                                     <button
                                         type="button"
                                         onClick={handlePrintReturn}
-                                        className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                                        className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
                                     >
                                         Print Document
                                     </button>
@@ -1684,7 +1485,7 @@ const SupplierReturnManagement = () => {
                                 <button
                                     type="button"
                                     onClick={closeDetailsModal}
-                                    className="rounded-lg border border-slate-300 px-3 py-2 text-xl text-slate-500 hover:bg-slate-100"
+                                    className="rounded-xl border border-slate-300 px-3 py-2 text-xl text-slate-500 transition hover:bg-slate-100"
                                 >
                                     ×
                                 </button>
@@ -1696,12 +1497,11 @@ const SupplierReturnManagement = () => {
                                 Loading return details...
                             </div>
                         ) : detailsError ? (
-                            <div className="m-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                            <div className="m-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
                                 {detailsError}
                             </div>
                         ) : returnDetails && (
                             <div className="space-y-6 p-5">
-
                                 {/* RETURN SUMMARY */}
                                 <section>
                                     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -1721,79 +1521,66 @@ const SupplierReturnManagement = () => {
                                     </div>
 
                                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-
-                                        <div className="rounded-lg bg-slate-50 p-4">
+                                        <div className="rounded-xl bg-slate-50 p-4">
                                             <p className="text-xs text-slate-500">Supplier</p>
                                             <p className="mt-1 font-semibold text-slate-800">
                                                 {returnDetails.supplierDetails?.companyName ||
-                                                    returnDetails.supplier?.companyName ||
-                                                    'N/A'}
+                                                    returnDetails.supplier?.companyName || 'N/A'}
                                             </p>
                                         </div>
 
-                                        <div className="rounded-lg bg-slate-50 p-4">
+                                        <div className="rounded-xl bg-slate-50 p-4">
                                             <p className="text-xs text-slate-500">Contact Person</p>
                                             <p className="mt-1 font-semibold text-slate-800">
                                                 {returnDetails.supplierDetails?.contactPerson ||
-                                                    returnDetails.supplier?.contactPerson ||
-                                                    'N/A'}
+                                                    returnDetails.supplier?.contactPerson || 'N/A'}
                                             </p>
                                         </div>
 
-                                        <div className="rounded-lg bg-slate-50 p-4">
+                                        <div className="rounded-xl bg-slate-50 p-4">
                                             <p className="text-xs text-slate-500">Supplier Phone</p>
                                             <p className="mt-1 font-semibold text-slate-800">
                                                 {returnDetails.supplierDetails?.phone ||
-                                                    returnDetails.supplier?.phone ||
-                                                    'N/A'}
+                                                    returnDetails.supplier?.phone || 'N/A'}
                                             </p>
                                         </div>
 
-                                        <div className="rounded-lg bg-slate-50 p-4">
+                                        <div className="rounded-xl bg-slate-50 p-4">
                                             <p className="text-xs text-slate-500">Return Date</p>
                                             <p className="mt-1 font-semibold text-slate-800">
                                                 {formatDate(returnDetails.returnDate)}
                                             </p>
                                         </div>
 
-                                        <div className="rounded-lg bg-slate-50 p-4">
+                                        <div className="rounded-xl bg-slate-50 p-4">
                                             <p className="text-xs text-slate-500">Total Devices</p>
                                             <p className="mt-1 font-semibold text-slate-800">
                                                 {returnDetails.totalItems || 0}
                                             </p>
                                         </div>
 
-                                        <div className="rounded-lg bg-slate-50 p-4">
-                                            <p className="text-xs text-slate-500">Reference Number</p>
-                                            <p className="mt-1 break-all font-semibold text-slate-800">
-                                                {returnDetails.referenceNumber || 'N/A'}
-                                            </p>
-                                        </div>
-
-                                        <div className="rounded-lg bg-slate-50 p-4 sm:col-span-2 lg:col-span-3">
+                                        <div className="rounded-xl bg-slate-50 p-4">
                                             <p className="text-xs text-slate-500">Return Reason</p>
                                             <p className="mt-1 font-semibold text-slate-800">
                                                 {returnDetails.returnReason || 'N/A'}
                                             </p>
                                         </div>
-
                                     </div>
                                 </section>
 
                                 {/* RETURNED DEVICE TABLE */}
                                 <section className="border-t border-slate-200 pt-5">
-
-                                    <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-700">
-                                        Returned Device Details
-                                    </h3>
+                                    <div className="mb-4 flex items-center gap-2">
+                                        <span className="h-5 w-1.5 rounded-full bg-orange-500" />
+                                        <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
+                                            Returned Device Details
+                                        </h3>
+                                    </div>
 
                                     <div className="overflow-x-auto rounded-xl border border-slate-200">
-
-                                        <table className="w-full min-w-[1000px] text-left">
-
+                                        <table className="w-full min-w-[900px] text-left">
                                             <thead className="bg-slate-50">
                                                 <tr className="border-b border-slate-200">
-
                                                     <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">Product</th>
                                                     <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">SKU</th>
                                                     <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">Unit Code</th>
@@ -1801,20 +1588,17 @@ const SupplierReturnManagement = () => {
                                                     <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">Asset ID</th>
                                                     <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">Previous Department</th>
                                                     <th className="px-4 py-3 text-xs font-bold uppercase text-slate-500">Previous Room</th>
-
                                                 </tr>
                                             </thead>
 
                                             <tbody className="divide-y divide-slate-100">
-
                                                 {returnDetails.items?.length ? (
                                                     returnDetails.items.map((item) => {
                                                         const product = item.productDetails || {};
                                                         const previous = item.previousAssignment || {};
 
                                                         return (
-                                                            <tr key={item._id} className="hover:bg-slate-50">
-
+                                                            <tr key={item._id} className="transition-colors hover:bg-slate-50">
                                                                 <td className="px-4 py-3 text-sm font-semibold text-slate-800">
                                                                     {product.name || item.stockItem?.name || 'N/A'}
                                                                 </td>
@@ -1842,7 +1626,6 @@ const SupplierReturnManagement = () => {
                                                                 <td className="px-4 py-3 text-sm text-slate-600">
                                                                     {previous.roomName || getRelationName(previous.room)}
                                                                 </td>
-
                                                             </tr>
                                                         );
                                                     })
@@ -1853,91 +1636,25 @@ const SupplierReturnManagement = () => {
                                                         </td>
                                                     </tr>
                                                 )}
-
                                             </tbody>
                                         </table>
-
                                     </div>
-
                                 </section>
 
-                                {/* TECHNICAL DETAILS */}
-                                <section className="border-t border-slate-200 pt-5">
-
-                                    <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-700">
-                                        Technical & Warranty Information
-                                    </h3>
-
-                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-
-                                        {returnDetails.items?.map((item, index) => (
-                                            <div
-                                                key={item._id}
-                                                className="rounded-xl border border-slate-200 p-4"
-                                            >
-                                                <p className="mb-3 font-semibold text-slate-800">
-                                                    Device {index + 1}: {item.productDetails?.unitCode || item.stockUnit?.unitCode || 'N/A'}
-                                                </p>
-
-                                                <div className="space-y-2 text-sm">
-                                                    <p>
-                                                        <span className="font-semibold text-slate-600">Reason: </span>
-                                                        {item.returnReason || 'N/A'}
-                                                    </p>
-
-                                                    <p>
-                                                        <span className="font-semibold text-slate-600">Problem: </span>
-                                                        {item.problemDescription || 'N/A'}
-                                                    </p>
-
-                                                    <p>
-                                                        <span className="font-semibold text-slate-600">Inspection: </span>
-                                                        {item.technicalInspection || 'N/A'}
-                                                    </p>
-
-                                                    <p>
-                                                        <span className="font-semibold text-slate-600">Warranty Status: </span>
-                                                        {item.warrantyClaim?.status || 'N/A'}
-                                                    </p>
-
-                                                    <p>
-                                                        <span className="font-semibold text-slate-600">Warranty Reference: </span>
-                                                        {item.warrantyClaim?.referenceNumber || 'N/A'}
-                                                    </p>
-
-                                                    <p>
-                                                        <span className="font-semibold text-slate-600">Warranty Notes: </span>
-                                                        {item.warrantyClaim?.notes || 'N/A'}
-                                                    </p>
-
-                                                    <p>
-                                                        <span className="font-semibold text-slate-600">Device Notes: </span>
-                                                        {item.notes || 'N/A'}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        ))}
-
-                                    </div>
-
-                                </section>
-
-                                {/* PREPARED BY AND NOTES */}
+                                {/* RETURN NOTES */}
                                 <section className="grid grid-cols-1 gap-4 border-t border-slate-200 pt-5 sm:grid-cols-2">
-
-                                    <div className="rounded-lg bg-slate-50 p-4">
+                                    <div className="rounded-xl bg-slate-50 p-4">
                                         <p className="text-xs font-medium text-slate-500">
                                             Prepared By
                                         </p>
 
                                         <p className="mt-1 font-semibold text-slate-800">
                                             {returnDetails.preparedBy?.name ||
-                                                returnDetails.preparedBy?.email ||
-                                                'N/A'}
+                                                returnDetails.preparedBy?.email || 'N/A'}
                                         </p>
                                     </div>
 
-                                    <div className="rounded-lg bg-slate-50 p-4">
+                                    <div className="rounded-xl bg-slate-50 p-4">
                                         <p className="text-xs font-medium text-slate-500">
                                             Return Notes
                                         </p>
@@ -1946,9 +1663,7 @@ const SupplierReturnManagement = () => {
                                             {returnDetails.notes || 'No additional notes.'}
                                         </p>
                                     </div>
-
                                 </section>
-
                             </div>
                         )}
 
@@ -1956,16 +1671,14 @@ const SupplierReturnManagement = () => {
                             <button
                                 type="button"
                                 onClick={closeDetailsModal}
-                                className="rounded-lg bg-slate-800 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700"
+                                className="rounded-xl bg-slate-800 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700"
                             >
                                 Close
                             </button>
                         </div>
-
                     </div>
                 </div>
             )}
-
         </div>
     );
 };

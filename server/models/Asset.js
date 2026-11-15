@@ -60,11 +60,11 @@ const assetSchema = new mongoose.Schema(
             required: true
         },
 
-        // ROOM REFERENCE
+        // ROOM REFERENCE (OPTIONAL)
         room: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Room',
-            required: true
+            default: null
         },
 
         // ASSET STATUS

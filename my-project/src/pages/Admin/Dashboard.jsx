@@ -6,6 +6,92 @@ import AdminSidebar from '../../components/AdminSidebar.jsx';
 
 const USERS_API_URL = 'http://localhost:3001/api/users';
 
+// REUSABLE DONUT CHART
+const DonutChart = ({ segments, total, centerLabel }) => {
+    const circumference = 2 * Math.PI * 68;
+    let offset = 0;
+
+    return (
+        <div className="relative w-44 h-44 shrink-0">
+            <svg viewBox="0 0 160 160" className="w-full h-full -rotate-90">
+                <circle
+                    cx="80"
+                    cy="80"
+                    r="68"
+                    fill="none"
+                    stroke="#e2e8f0"
+                    strokeWidth="17"
+                />
+
+                {segments.map((segment, index) => {
+                    const percentage = total > 0
+                        ? (segment.value / total) * 100
+                        : 0;
+
+                    const dash = (percentage / 100) * circumference;
+                    const currentOffset = offset;
+
+                    offset += dash;
+
+                    return (
+                        <circle
+                            key={index}
+                            cx="80"
+                            cy="80"
+                            r="68"
+                            fill="none"
+                            stroke={segment.color}
+                            strokeWidth="17"
+                            strokeDasharray={`${dash} ${circumference - dash}`}
+                            strokeDashoffset={-currentOffset}
+                            strokeLinecap="round"
+                            className="transition-all duration-700"
+                        />
+                    );
+                })}
+            </svg>
+
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-3xl font-bold text-slate-800">
+                    {total}
+                </span>
+                <span className="text-xs text-slate-400 mt-1">
+                    {centerLabel}
+                </span>
+            </div>
+        </div>
+    );
+};
+
+// REUSABLE STAT CARD
+const StatCard = ({ title, value, icon, color, description, accent }) => (
+    <div className="group relative overflow-hidden bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+        <div className={`absolute top-0 left-0 w-full h-1 ${accent || 'bg-blue-500'}`} />
+
+        <div className="flex justify-between items-start">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold ${color}`}>
+                {icon}
+            </div>
+
+            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                Overview
+            </span>
+        </div>
+
+        <h2 className="text-3xl font-bold text-slate-800 mt-5">
+            {value}
+        </h2>
+
+        <p className="text-sm font-semibold text-slate-600 mt-1">
+            {title}
+        </p>
+
+        <p className="text-xs text-slate-400 mt-2">
+            {description}
+        </p>
+    </div>
+);
+
 const Dashboard = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -13,14 +99,14 @@ const Dashboard = () => {
 
     const [activeMenu, setActiveMenu] = useState('Dashboard');
 
-    // User Statistics
+    // USER STATISTICS
     const [userStats, setUserStats] = useState({
         totalUsers: 0,
         totalAdmins: 0,
         normalUsers: 0
     });
 
-    // Demo Asset Statistics
+    // DEMO ASSET STATISTICS - EXISTING DATA PRESERVED
     const [stats] = useState({
         totalAssets: 250,
         availableAssets: 120,
@@ -28,33 +114,33 @@ const Dashboard = () => {
         maintenanceAssets: 30
     });
 
-    // User List for Recent Users
+    // USER LIST
     const [users, setUsers] = useState([]);
     const [usersLoading, setUsersLoading] = useState(false);
     const [usersError, setUsersError] = useState('');
 
-    // Demo Activities
+    // DEMO ACTIVITIES
     const activities = [
         {
             title: 'New Computer Added',
             description: 'A new computer was added to IT inventory.',
             time: 'Today, 10:30 AM',
             icon: '💻',
-            color: 'bg-blue-50'
+            color: 'bg-blue-50 text-blue-600'
         },
         {
             title: 'Printer Assigned',
             description: 'A printer was assigned to a department.',
             time: 'Today, 09:15 AM',
             icon: '🖨️',
-            color: 'bg-emerald-50'
+            color: 'bg-emerald-50 text-emerald-600'
         },
         {
             title: 'Laptop Under Maintenance',
             description: 'A laptop was sent for maintenance.',
             time: 'Yesterday',
             icon: '🔧',
-            color: 'bg-orange-50'
+            color: 'bg-orange-50 text-orange-600'
         }
     ];
 
@@ -68,7 +154,7 @@ const Dashboard = () => {
         { name: 'Settings', icon: '⚙' }
     ];
 
-    // DASHBOARD MENU URL SYNC - Search: DASHBOARD MENU URL SYNC
+    // DASHBOARD MENU URL SYNC
     useEffect(() => {
         const params = new URLSearchParams(location.search);
         const requestedMenu = params.get('menu');
@@ -80,7 +166,7 @@ const Dashboard = () => {
         setActiveMenu(isValidMenu ? requestedMenu : 'Dashboard');
     }, [location.search]);
 
-    // Get Authentication Token
+    // GET AUTH TOKEN
     const getToken = () => {
         const token = localStorage.getItem('pos-token');
 
@@ -91,7 +177,7 @@ const Dashboard = () => {
         return token;
     };
 
-    // Load User Statistics
+    // LOAD USER STATISTICS
     const fetchUserStats = async () => {
         try {
             const token = getToken();
@@ -120,7 +206,7 @@ const Dashboard = () => {
         }
     };
 
-    // Load All Users for Recent Users
+    // LOAD ALL USERS
     const fetchAllUsers = async () => {
         setUsersLoading(true);
         setUsersError('');
@@ -154,19 +240,19 @@ const Dashboard = () => {
         }
     };
 
-    // Initial Dashboard Data Load
+    // INITIAL DATA LOAD
     useEffect(() => {
         fetchUserStats();
         fetchAllUsers();
     }, []);
 
-    // Refresh Dashboard
+    // REFRESH DASHBOARD
     const handleRefreshDashboard = () => {
         fetchUserStats();
         fetchAllUsers();
     };
 
-    // User Status Statistics
+    // USER STATUS STATISTICS
     const activeUsers = users.filter(
         (item) => item.isActive !== false
     ).length;
@@ -175,7 +261,7 @@ const Dashboard = () => {
         (item) => item.isActive === false
     ).length;
 
-    // Asset Chart Data
+    // ASSET CHART DATA
     const assetItems = [
         {
             name: 'Available Assets',
@@ -197,89 +283,81 @@ const Dashboard = () => {
         }
     ];
 
-    // Asset Pie Chart Gradient
-    const assetAvailablePercent =
-        (stats.availableAssets / Math.max(stats.totalAssets, 1)) * 100;
-
-    const assetAssignedPercent =
-        ((stats.availableAssets + stats.assignedAssets) /
-            Math.max(stats.totalAssets, 1)) * 100;
-
-    const assetPieGradient = `conic-gradient(
-        #10b981 0% ${assetAvailablePercent}%,
-        #3b82f6 ${assetAvailablePercent}% ${assetAssignedPercent}%,
-        #f97316 ${assetAssignedPercent}% 100%
-    )`;
-
-    // User Pie Chart Gradient
-    const adminPercent =
-        (userStats.totalAdmins / Math.max(userStats.totalUsers, 1)) * 100;
-
-    const userPieGradient = `conic-gradient(
-        #8b5cf6 0% ${adminPercent}%,
-        #3b82f6 ${adminPercent}% 100%
-    )`;
-
-    // Dashboard Cards
-    const dashboardCards = [
+    // USER CHART DATA
+    const userSegments = [
         {
-            title: 'Total Assets',
-            value: stats.totalAssets,
-            icon: '💻',
-            color: 'bg-blue-50 text-blue-600',
-            description: 'Registered assets'
+            label: 'Administrators',
+            value: userStats.totalAdmins,
+            color: '#8b5cf6'
         },
         {
-            title: 'Available Assets',
-            value: stats.availableAssets,
-            icon: '✓',
-            color: 'bg-emerald-50 text-emerald-600',
-            description: 'Ready to use'
-        },
-        {
-            title: 'Assigned Assets',
-            value: stats.assignedAssets,
-            icon: '♙',
-            color: 'bg-violet-50 text-violet-600',
-            description: 'Currently assigned'
-        },
-        {
-            title: 'Maintenance',
-            value: stats.maintenanceAssets,
-            icon: '⚙',
-            color: 'bg-orange-50 text-orange-600',
-            description: 'Under repair'
+            label: 'Normal Users',
+            value: userStats.normalUsers,
+            color: '#3b82f6'
         }
     ];
 
-    // DASHBOARD NAVIGATION - Search: DASHBOARD NAVIGATION
-    const handleNavigation = (menuName) => {
+    const assetSegments = assetItems.map(item => ({
+        label: item.name,
+        value: item.value,
+        color: item.hex
+    }));
 
-        // User Management has its own separate page.
+    // ASSET AVAILABILITY
+    const unavailableAssets = Math.max(
+        stats.totalAssets - stats.availableAssets,
+        0
+    );
+
+    const availabilitySegments = [
+        {
+            label: 'Available',
+            value: stats.availableAssets,
+            color: '#10b981'
+        },
+        {
+            label: 'Other Assets',
+            value: unavailableAssets,
+            color: '#f97316'
+        }
+    ];
+
+    // USER ACCOUNT STATUS
+    const accountSegments = [
+        {
+            label: 'Active Users',
+            value: activeUsers,
+            color: '#10b981'
+        },
+        {
+            label: 'Inactive Users',
+            value: inactiveUsers,
+            color: '#f97316'
+        }
+    ];
+
+    // DASHBOARD NAVIGATION
+    const handleNavigation = (menuName) => {
         if (menuName === 'User Management') {
             navigate('/admin/users');
             return;
         }
 
-        // Stock Inventory has its own separate page.
         if (menuName === 'Stock Inventory') {
             navigate('/admin/stock');
             return;
         }
 
-        // Asset Management has its own separate page.
         if (menuName === 'Asset Management') {
             navigate('/admin/assets');
             return;
         }
 
-        // Departments has its own separate page.
         if (menuName === 'Departments') {
             navigate('/admin/departments');
             return;
         }
 
-        // Keep other Dashboard modules on this page.
         setActiveMenu(menuName);
 
         navigate(
@@ -288,55 +366,26 @@ const Dashboard = () => {
         );
     };
 
-    // Reusable Stat Card
-    const StatCard = ({ title, value, icon, color, description }) => (
-        <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:-translate-y-1 transition duration-300">
-            <div className="flex justify-between items-start">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold ${color}`}>
-                    {icon}
-                </div>
-
-                <span className="text-xs font-medium text-slate-400">
-                    Overview
-                </span>
-            </div>
-
-            <h2 className="text-3xl font-bold text-slate-800 mt-5">
-                {value}
-            </h2>
-
-            <p className="text-sm font-semibold text-slate-600 mt-1">
-                {title}
-            </p>
-
-            <p className="text-xs text-slate-400 mt-2">
-                {description}
-            </p>
-        </div>
-    );
-
     return (
         <div className="min-h-screen bg-slate-100 flex">
 
             {/* REUSABLE ADMIN SIDEBAR */}
             <AdminSidebar />
 
-            {/* Main Content */}
+            {/* MAIN CONTENT */}
             <main className="flex-1 lg:ml-64 min-w-0">
 
-                {/* Topbar */}
+                {/* TOPBAR */}
                 <header className="bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between sticky top-0 z-20">
 
-                    <div className="flex items-center gap-3 min-w-0">
-                        <div className="min-w-0">
-                            <p className="text-[10px] sm:text-xs text-slate-400 font-semibold tracking-wide">
-                                UNITED MEDICAL COLLEGE / ADMIN
-                            </p>
+                    <div className="min-w-0">
+                        <p className="text-[10px] sm:text-xs text-slate-400 font-semibold tracking-wide">
+                            UNITED MEDICAL COLLEGE / ADMIN
+                        </p>
 
-                            <h2 className="text-lg sm:text-xl font-bold text-slate-800 mt-1 truncate">
-                                {activeMenu}
-                            </h2>
-                        </div>
+                        <h2 className="text-lg sm:text-xl font-bold text-slate-800 mt-1 truncate">
+                            {activeMenu}
+                        </h2>
                     </div>
 
                     <div className="flex items-center gap-3">
@@ -350,24 +399,28 @@ const Dashboard = () => {
                             </p>
                         </div>
 
-                        <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold uppercase">
+                        <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 border border-orange-200 flex items-center justify-center font-bold uppercase">
                             {user?.name?.charAt(0) || 'A'}
                         </div>
                     </div>
                 </header>
 
-                {/* Page Content */}
-                <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+                {/* PAGE CONTENT */}
+                <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto">
 
-                    {/* Dashboard Overview */}
                     {activeMenu === 'Dashboard' && (
                         <>
-                            {/* Welcome Section */}
+
+                            {/* WELCOME SECTION */}
                             <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+
                                 <div>
-                                    <p className="text-sm text-blue-600 font-semibold mb-2">
-                                        ADMIN OVERVIEW
-                                    </p>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className="w-2 h-2 rounded-full bg-orange-500" />
+                                        <p className="text-sm text-orange-600 font-bold tracking-wide">
+                                            ADMIN OVERVIEW
+                                        </p>
+                                    </div>
 
                                     <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">
                                         Welcome back, {user?.name || 'Administrator'}!
@@ -381,40 +434,77 @@ const Dashboard = () => {
                                 <button
                                     onClick={handleRefreshDashboard}
                                     disabled={usersLoading}
-                                    className="px-5 py-3 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm font-semibold shadow-sm transition disabled:opacity-50"
+                                    className="px-5 py-3 rounded-xl bg-white border border-slate-200 text-slate-700 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50 text-sm font-semibold shadow-sm transition disabled:opacity-50"
                                 >
                                     ↻ Refresh Dashboard
                                 </button>
                             </div>
 
-                            {/* Asset Statistics */}
+                            {/* ASSET STATISTICS */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
-                                {dashboardCards.map((card) => (
-                                    <StatCard
-                                        key={card.title}
-                                        {...card}
-                                    />
-                                ))}
+
+                                <StatCard
+                                    title="Total Assets"
+                                    value={stats.totalAssets}
+                                    icon="💻"
+                                    color="bg-blue-50 text-blue-600"
+                                    accent="bg-blue-500"
+                                    description="Registered assets"
+                                />
+
+                                <StatCard
+                                    title="Available Assets"
+                                    value={stats.availableAssets}
+                                    icon="✓"
+                                    color="bg-emerald-50 text-emerald-600"
+                                    accent="bg-emerald-500"
+                                    description="Ready to use"
+                                />
+
+                                <StatCard
+                                    title="Assigned Assets"
+                                    value={stats.assignedAssets}
+                                    icon="♙"
+                                    color="bg-violet-50 text-violet-600"
+                                    accent="bg-violet-500"
+                                    description="Currently assigned"
+                                />
+
+                                <StatCard
+                                    title="Maintenance"
+                                    value={stats.maintenanceAssets}
+                                    icon="⚙"
+                                    color="bg-orange-50 text-orange-600"
+                                    accent="bg-orange-500"
+                                    description="Under repair"
+                                />
                             </div>
 
-                            {/* User Statistics */}
-                            <div className="mt-8">
-                                <div className="mb-4">
-                                    <h2 className="text-lg font-bold text-slate-800">
-                                        User Overview
-                                    </h2>
+                            {/* USER STATISTICS */}
+                            <div className="mt-9">
 
-                                    <p className="text-xs text-slate-400 mt-1">
+                                <div className="mb-5">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-2 h-6 rounded-full bg-orange-500" />
+
+                                        <h2 className="text-lg font-bold text-slate-800">
+                                            User Overview
+                                        </h2>
+                                    </div>
+
+                                    <p className="text-xs text-slate-400 mt-2 ml-4">
                                         Live statistics from registered accounts
                                     </p>
                                 </div>
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+
                                     <StatCard
                                         title="Total Users"
                                         value={userStats.totalUsers}
                                         icon="♙"
                                         color="bg-blue-50 text-blue-600"
+                                        accent="bg-blue-500"
                                         description="Registered accounts"
                                     />
 
@@ -423,6 +513,7 @@ const Dashboard = () => {
                                         value={userStats.totalAdmins}
                                         icon="🛡️"
                                         color="bg-violet-50 text-violet-600"
+                                        accent="bg-violet-500"
                                         description="Admin accounts"
                                     />
 
@@ -431,6 +522,7 @@ const Dashboard = () => {
                                         value={activeUsers}
                                         icon="✓"
                                         color="bg-emerald-50 text-emerald-600"
+                                        accent="bg-emerald-500"
                                         description="Currently active"
                                     />
 
@@ -438,187 +530,221 @@ const Dashboard = () => {
                                         title="Inactive Users"
                                         value={inactiveUsers}
                                         icon="⊘"
-                                        color="bg-red-50 text-red-600"
+                                        color="bg-orange-50 text-orange-600"
+                                        accent="bg-orange-500"
                                         description="Inactive accounts"
                                     />
                                 </div>
                             </div>
 
-                            {/* Modern Analytics Charts */}
-                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-8">
+                            {/* CIRCULAR ANALYTICS */}
+                            <div className="mt-9">
 
-                                {/* Asset Distribution */}
-                                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-                                    <div className="flex items-center justify-between mb-6">
-                                        <div>
-                                            <h2 className="text-lg font-bold text-slate-800">
-                                                Asset Distribution
-                                            </h2>
+                                <div className="mb-5">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-2 h-6 rounded-full bg-orange-500" />
 
-                                            <p className="text-xs text-slate-400 mt-1">
-                                                Inventory overview by asset status
-                                            </p>
-                                        </div>
-
-                                        <span className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 text-xs font-semibold">
-                                            Analytics
-                                        </span>
+                                        <h2 className="text-lg font-bold text-slate-800">
+                                            Analytics & Distribution
+                                        </h2>
                                     </div>
 
-                                    <div className="flex flex-col sm:flex-row items-center gap-8 justify-center">
-
-                                        <div
-                                            className="w-48 h-48 rounded-full relative shrink-0 shadow-inner"
-                                            style={{
-                                                background: assetPieGradient
-                                            }}
-                                        >
-                                            <div className="absolute inset-7 bg-white rounded-full flex flex-col items-center justify-center">
-                                                <span className="text-3xl font-bold text-slate-800">
-                                                    {stats.totalAssets}
-                                                </span>
-
-                                                <span className="text-xs text-slate-400">
-                                                    Total Assets
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-5 w-full">
-                                            {assetItems.map((item) => {
-                                                const percentage = stats.totalAssets
-                                                    ? ((item.value / stats.totalAssets) * 100).toFixed(1)
-                                                    : 0;
-
-                                                return (
-                                                    <div key={item.name}>
-                                                        <div className="flex justify-between items-center mb-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <span
-                                                                    className="w-3 h-3 rounded-full"
-                                                                    style={{
-                                                                        backgroundColor: item.hex
-                                                                    }}
-                                                                />
-
-                                                                <span className="text-sm text-slate-600">
-                                                                    {item.name}
-                                                                </span>
-                                                            </div>
-
-                                                            <span className="text-sm font-bold text-slate-800">
-                                                                {percentage}%
-                                                            </span>
-                                                        </div>
-
-                                                        <p className="text-xs text-slate-400 ml-5">
-                                                            {item.value} Assets
-                                                        </p>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
+                                    <p className="text-xs text-slate-400 mt-2 ml-4">
+                                        Visual overview of assets and user accounts
+                                    </p>
                                 </div>
 
-                                {/* User Distribution */}
-                                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-                                    <div className="flex items-center justify-between mb-6">
-                                        <div>
-                                            <h2 className="text-lg font-bold text-slate-800">
-                                                User Distribution
-                                            </h2>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
 
-                                            <p className="text-xs text-slate-400 mt-1">
-                                                Accounts by user role
-                                            </p>
+                                    {/* ASSET DISTRIBUTION */}
+                                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 hover:shadow-lg transition duration-300">
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <h3 className="font-bold text-slate-800">
+                                                    Asset Distribution
+                                                </h3>
+                                                <p className="text-xs text-slate-400 mt-1">
+                                                    By asset status
+                                                </p>
+                                            </div>
+
+                                            <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                                                ◉
+                                            </div>
                                         </div>
 
-                                        <span className="px-3 py-1.5 rounded-lg bg-violet-50 text-violet-600 text-xs font-semibold">
-                                            Live Data
-                                        </span>
+                                        <div className="flex justify-center py-5">
+                                            <DonutChart
+                                                segments={assetSegments}
+                                                total={stats.totalAssets}
+                                                centerLabel="Total Assets"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            {assetItems.map(item => (
+                                                <div key={item.name} className="flex justify-between items-center">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`w-2.5 h-2.5 rounded-full ${item.color}`} />
+                                                        <span className="text-xs text-slate-500">
+                                                            {item.name}
+                                                        </span>
+                                                    </div>
+
+                                                    <span className="text-xs font-bold text-slate-700">
+                                                        {item.value}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
 
-                                    <div className="flex flex-col sm:flex-row items-center gap-8 justify-center">
+                                    {/* USER DISTRIBUTION */}
+                                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 hover:shadow-lg transition duration-300">
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <h3 className="font-bold text-slate-800">
+                                                    User Distribution
+                                                </h3>
+                                                <p className="text-xs text-slate-400 mt-1">
+                                                    Accounts by role
+                                                </p>
+                                            </div>
 
-                                        <div
-                                            className="w-48 h-48 rounded-full relative shrink-0 shadow-inner"
-                                            style={{
-                                                background: userPieGradient
-                                            }}
-                                        >
-                                            <div className="absolute inset-7 bg-white rounded-full flex flex-col items-center justify-center">
-                                                <span className="text-3xl font-bold text-slate-800">
-                                                    {userStats.totalUsers}
-                                                </span>
-
-                                                <span className="text-xs text-slate-400">
-                                                    Total Users
-                                                </span>
+                                            <div className="w-9 h-9 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center">
+                                                ♙
                                             </div>
                                         </div>
 
-                                        <div className="space-y-6 w-full">
+                                        <div className="flex justify-center py-5">
+                                            <DonutChart
+                                                segments={userSegments}
+                                                total={userStats.totalUsers}
+                                                centerLabel="Total Users"
+                                            />
+                                        </div>
 
-                                            <div>
-                                                <div className="flex justify-between items-center mb-2">
+                                        <div className="space-y-3">
+                                            {userSegments.map(item => (
+                                                <div key={item.label} className="flex justify-between items-center">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="w-3 h-3 rounded-full bg-violet-500" />
-
-                                                        <span className="text-sm text-slate-600">
-                                                            Administrators
+                                                        <span
+                                                            className="w-2.5 h-2.5 rounded-full"
+                                                            style={{ backgroundColor: item.color }}
+                                                        />
+                                                        <span className="text-xs text-slate-500">
+                                                            {item.label}
                                                         </span>
                                                     </div>
 
-                                                    <span className="font-bold text-slate-800 text-sm">
-                                                        {userStats.totalAdmins}
+                                                    <span className="text-xs font-bold text-slate-700">
+                                                        {item.value}
                                                     </span>
                                                 </div>
+                                            ))}
+                                        </div>
+                                    </div>
 
-                                                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                                    <div
-                                                        className="h-full bg-violet-500 rounded-full transition-all duration-700"
-                                                        style={{
-                                                            width: `${adminPercent}%`
-                                                        }}
-                                                    />
-                                                </div>
+                                    {/* ACCOUNT STATUS */}
+                                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 hover:shadow-lg transition duration-300">
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <h3 className="font-bold text-slate-800">
+                                                    Account Status
+                                                </h3>
+                                                <p className="text-xs text-slate-400 mt-1">
+                                                    Active vs inactive
+                                                </p>
                                             </div>
 
+                                            <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                                                ✓
+                                            </div>
+                                        </div>
+
+                                        <div className="flex justify-center py-5">
+                                            <DonutChart
+                                                segments={accountSegments}
+                                                total={users.length}
+                                                centerLabel="Accounts"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            <div className="flex justify-between">
+                                                <span className="text-xs text-slate-500">
+                                                    <span className="text-emerald-500">●</span> Active
+                                                </span>
+                                                <span className="text-xs font-bold text-slate-700">
+                                                    {activeUsers}
+                                                </span>
+                                            </div>
+
+                                            <div className="flex justify-between">
+                                                <span className="text-xs text-slate-500">
+                                                    <span className="text-orange-500">●</span> Inactive
+                                                </span>
+                                                <span className="text-xs font-bold text-slate-700">
+                                                    {inactiveUsers}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* ASSET AVAILABILITY */}
+                                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 hover:shadow-lg transition duration-300">
+                                        <div className="flex justify-between items-center">
                                             <div>
-                                                <div className="flex justify-between items-center mb-2">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="w-3 h-3 rounded-full bg-blue-500" />
+                                                <h3 className="font-bold text-slate-800">
+                                                    Asset Availability
+                                                </h3>
+                                                <p className="text-xs text-slate-400 mt-1">
+                                                    Ready to use
+                                                </p>
+                                            </div>
 
-                                                        <span className="text-sm text-slate-600">
-                                                            Normal Users / Employees / Customers
-                                                        </span>
-                                                    </div>
+                                            <div className="w-9 h-9 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center">
+                                                ◉
+                                            </div>
+                                        </div>
 
-                                                    <span className="font-bold text-slate-800 text-sm">
-                                                        {userStats.normalUsers}
-                                                    </span>
-                                                </div>
+                                        <div className="flex justify-center py-5">
+                                            <DonutChart
+                                                segments={availabilitySegments}
+                                                total={stats.totalAssets}
+                                                centerLabel="Total Assets"
+                                            />
+                                        </div>
 
-                                                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                                    <div
-                                                        className="h-full bg-blue-500 rounded-full transition-all duration-700"
-                                                        style={{
-                                                            width: `${(userStats.normalUsers / Math.max(userStats.totalUsers, 1)) * 100}%`
-                                                        }}
-                                                    />
-                                                </div>
+                                        <div className="space-y-3">
+                                            <div className="flex justify-between">
+                                                <span className="text-xs text-slate-500">
+                                                    <span className="text-emerald-500">●</span> Available
+                                                </span>
+                                                <span className="text-xs font-bold text-slate-700">
+                                                    {stats.availableAssets}
+                                                </span>
+                                            </div>
+
+                                            <div className="flex justify-between">
+                                                <span className="text-xs text-slate-500">
+                                                    <span className="text-orange-500">●</span> Other Assets
+                                                </span>
+                                                <span className="text-xs font-bold text-slate-700">
+                                                    {unavailableAssets}
+                                                </span>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Main Dashboard Grid */}
-                            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-8">
+                            {/* ASSET OVERVIEW & QUICK SUMMARY */}
+                            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-9">
 
-                                {/* Asset Overview */}
+                                {/* ASSET OVERVIEW */}
                                 <div className="xl:col-span-2 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
+
                                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-7">
                                         <div>
                                             <h2 className="font-bold text-slate-800 text-lg">
@@ -630,12 +756,12 @@ const Dashboard = () => {
                                             </p>
                                         </div>
 
-                                        <span className="text-xs bg-blue-50 text-blue-600 px-3 py-2 rounded-lg font-semibold w-fit">
+                                        <span className="text-xs bg-orange-50 text-orange-600 px-3 py-2 rounded-lg font-bold w-fit">
                                             Total: {stats.totalAssets}
                                         </span>
                                     </div>
 
-                                    {assetItems.map((item) => {
+                                    {assetItems.map(item => {
                                         const percentage = stats.totalAssets
                                             ? (item.value / stats.totalAssets) * 100
                                             : 0;
@@ -655,9 +781,7 @@ const Dashboard = () => {
                                                 <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
                                                     <div
                                                         className={`${item.color} h-full rounded-full transition-all duration-700`}
-                                                        style={{
-                                                            width: `${percentage}%`
-                                                        }}
+                                                        style={{ width: `${percentage}%` }}
                                                     />
                                                 </div>
                                             </div>
@@ -669,44 +793,51 @@ const Dashboard = () => {
                                     </p>
                                 </div>
 
-                                {/* Quick Summary */}
-                                <div className="bg-gradient-to-br from-blue-700 to-blue-950 p-6 rounded-2xl text-white shadow-lg flex flex-col">
-                                    <div className="text-4xl mb-5">
-                                        🏥
-                                    </div>
+                                {/* QUICK SUMMARY */}
+                                <div className="relative overflow-hidden bg-gradient-to-br from-blue-700 via-blue-800 to-slate-900 p-6 rounded-2xl text-white shadow-lg flex flex-col">
 
-                                    <h2 className="text-xl font-bold">
-                                        UMC IT Management
-                                    </h2>
+                                    <div className="absolute -right-12 -top-12 w-44 h-44 rounded-full border-[25px] border-orange-400/20" />
+                                    <div className="absolute -right-4 -top-4 w-24 h-24 rounded-full border-[12px] border-orange-400/20" />
 
-                                    <p className="text-sm text-blue-100 mt-3 leading-6">
-                                        Manage your institution's IT assets, users and inventory from one central dashboard.
-                                    </p>
+                                    <div className="relative z-10">
+                                        <div className="w-14 h-14 rounded-2xl bg-orange-500 flex items-center justify-center text-3xl mb-5 shadow-lg">
+                                            🏥
+                                        </div>
 
-                                    <div className="mt-8 pt-5 border-t border-blue-400/30">
-                                        <p className="text-xs text-blue-200">
-                                            Total Registered Users
+                                        <h2 className="text-xl font-bold">
+                                            UMC IT Management
+                                        </h2>
+
+                                        <p className="text-sm text-blue-100 mt-3 leading-6">
+                                            Manage your institution's IT assets, users and inventory from one central dashboard.
                                         </p>
 
-                                        <h3 className="text-4xl font-bold mt-2">
-                                            {userStats.totalUsers}
-                                        </h3>
+                                        <div className="mt-8 pt-5 border-t border-white/20">
+                                            <p className="text-xs text-blue-200">
+                                                Total Registered Users
+                                            </p>
+
+                                            <h3 className="text-4xl font-bold mt-2">
+                                                {userStats.totalUsers}
+                                            </h3>
+                                        </div>
                                     </div>
 
                                     <button
                                         onClick={() => handleNavigation('User Management')}
-                                        className="mt-auto pt-6 text-left text-sm font-semibold text-white hover:text-blue-200 transition"
+                                        className="relative z-10 mt-auto pt-7 text-left text-sm font-bold text-orange-300 hover:text-white transition"
                                     >
                                         Manage Users →
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Recent Users and Activities */}
-                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-8">
+                            {/* RECENT USERS & ACTIVITIES */}
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-9">
 
-                                {/* Recent Users */}
+                                {/* RECENT USERS */}
                                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
+
                                     <div className="flex justify-between items-center mb-6">
                                         <div>
                                             <h2 className="text-lg font-bold text-slate-800">
@@ -720,7 +851,7 @@ const Dashboard = () => {
 
                                         <button
                                             onClick={() => handleNavigation('User Management')}
-                                            className="text-xs font-semibold text-blue-600 hover:text-blue-800"
+                                            className="text-xs font-bold text-orange-600 hover:text-orange-700"
                                         >
                                             View All →
                                         </button>
@@ -749,12 +880,12 @@ const Dashboard = () => {
                                         </p>
                                     ) : (
                                         <div className="space-y-4">
-                                            {users.slice(0, 5).map((recentUser) => (
+                                            {users.slice(0, 5).map(recentUser => (
                                                 <div
                                                     key={recentUser._id}
                                                     className="flex items-center gap-3"
                                                 >
-                                                    <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center font-bold uppercase">
+                                                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold uppercase">
                                                         {recentUser.name?.charAt(0) || 'U'}
                                                     </div>
 
@@ -770,7 +901,7 @@ const Dashboard = () => {
 
                                                     <span className={`text-[10px] px-2.5 py-1 rounded-full font-semibold ${
                                                         recentUser.isActive === false
-                                                            ? 'bg-red-50 text-red-600'
+                                                            ? 'bg-orange-50 text-orange-600'
                                                             : 'bg-emerald-50 text-emerald-600'
                                                     }`}>
                                                         {recentUser.isActive === false ? 'Inactive' : 'Active'}
@@ -781,8 +912,9 @@ const Dashboard = () => {
                                     )}
                                 </div>
 
-                                {/* Recent Activities */}
+                                {/* RECENT ACTIVITIES */}
                                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
+
                                     <h2 className="text-lg font-bold text-slate-800">
                                         Recent Activities
                                     </h2>
@@ -794,6 +926,7 @@ const Dashboard = () => {
                                     <div className="space-y-5">
                                         {activities.map((activity, index) => (
                                             <div key={index} className="flex gap-4 items-start">
+
                                                 <div className={`w-11 h-11 rounded-xl ${activity.color} flex items-center justify-center text-xl shrink-0`}>
                                                     {activity.icon}
                                                 </div>
@@ -823,9 +956,10 @@ const Dashboard = () => {
                         </>
                     )}
 
-                    {/* Other Menu Pages */}
+                    {/* OTHER MENU PAGES */}
                     {activeMenu !== 'Dashboard' && (
                         <div className="bg-white rounded-2xl p-8 sm:p-12 border border-slate-200 shadow-sm text-center">
+
                             <div className="text-5xl mb-5">
                                 🚧
                             </div>
@@ -848,7 +982,7 @@ const Dashboard = () => {
                     )}
                 </div>
 
-                {/* Footer */}
+                {/* FOOTER */}
                 <footer className="px-5 sm:px-8 py-5 border-t border-slate-200 bg-white text-center">
                     <p className="text-xs text-slate-400">
                         © 2026 United Medical College | IT Asset Management System

@@ -2,6 +2,7 @@
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 
+import Supplier from '../models/Supplier.js';
 import StockItem from '../models/StockItem.js';
 import StockUnit from '../models/StockUnit.js';
 import StockReceipt from '../models/StockReceipt.js';
@@ -11,6 +12,34 @@ import StockReceipt from '../models/StockReceipt.js';
 // HELPER: ESCAPE REGEX
 const escapeRegex = (value) =>
     value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// HELPER: FIND OR CREATE SUPPLIER
+const findOrCreateSupplier = async (supplierName, session) => {
+    const cleanedName = supplierName?.trim();
+
+    if (!cleanedName) return null;
+
+    // FIND EXISTING SUPPLIER (CASE-INSENSITIVE)
+    const supplier = await Supplier.findOne({
+        companyName: new RegExp(`^${escapeRegex(cleanedName)}$`, 'i')
+    }).session(session);
+
+    // REUSE EXISTING SUPPLIER
+    if (supplier) {
+        return supplier;
+    }
+
+    // CREATE NEW SUPPLIER
+    const createdSuppliers = await Supplier.create(
+        [{
+            companyName: cleanedName,
+            isActive: true
+        }],
+        { session }
+    );
+
+    return createdSuppliers[0];
+};
 
 // HELPER: CREATE STOCK RECEIPT AND UNITS
 const createReceiptAndUnits = async ({
@@ -187,6 +216,16 @@ export const createStockItem = async (req, res) => {
                     model: new RegExp(`^${escapeRegex(model?.trim() || '')}$`, 'i'),
                     isActive: true
                 }).session(session);
+            }
+
+            // FIND OR CREATE SUPPLIER
+            const effectiveSupplierName =
+                supplierName?.trim() ||
+                existingItem?.supplierName?.trim() ||
+                '';
+
+            if (effectiveSupplierName) {
+                await findOrCreateSupplier(effectiveSupplierName, session);
             }
 
             if (existingItem) {
@@ -468,6 +507,16 @@ export const updateStockItem = async (req, res) => {
                 throw error;
             }
 
+            // FIND OR CREATE SUPPLIER
+            const effectiveSupplierName =
+                supplierName !== undefined
+                    ? supplierName.trim()
+                    : currentItem.supplierName?.trim() || '';
+
+            if (effectiveSupplierName) {
+                await findOrCreateSupplier(effectiveSupplierName, session);
+            }
+
             // CHECK DUPLICATE SKU
             if (normalizedSku) {
                 const existingItem = await StockItem.findOne({
@@ -669,8 +718,7 @@ export const deleteStockItem = async (req, res) => {
             });
         }
 
-                // PREVENT DELETION IF PRODUCT HAS STOCK HISTORY
-
+        // PREVENT DELETION IF PRODUCT HAS STOCK HISTORY
         const [hasStockUnits, hasStockReceipts] = await Promise.all([
             StockUnit.exists({ stockItem: id }),
             StockReceipt.exists({ stockItem: id })

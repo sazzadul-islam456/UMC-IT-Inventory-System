@@ -674,19 +674,19 @@ const StockInventory = () => {
             title: 'Total Received',
             value: stats.totalReceived,
             icon: '📥',
-            color: 'bg-purple-50 text-purple-600'
+            color: 'bg-violet-50 text-violet-600'
         },
         {
             title: 'Available Stock',
             value: stats.available,
             icon: '✅',
-            color: 'bg-green-50 text-green-600'
+            color: 'bg-emerald-50 text-emerald-600'
         },
         {
             title: 'Assigned',
             value: stats.assigned,
             icon: '🏢',
-            color: 'bg-indigo-50 text-indigo-600'
+            color: 'bg-blue-50 text-blue-600'
         },
         {
             title: 'Damaged',
@@ -704,13 +704,13 @@ const StockInventory = () => {
             title: 'Ordered',
             value: stats.ordered,
             icon: '🛒',
-            color: 'bg-yellow-50 text-yellow-700'
+            color: 'bg-orange-50 text-orange-600'
         },
         {
             title: 'Low Stock',
             value: stats.lowStock,
             icon: '📉',
-            color: 'bg-pink-50 text-pink-600'
+            color: 'bg-red-50 text-red-600'
         }
     ];
 
@@ -725,8 +725,8 @@ const StockInventory = () => {
         {
             label: 'Available',
             value: item.availableQuantity ?? 0,
-            color: 'text-green-700',
-            background: 'bg-green-50'
+            color: 'text-emerald-700',
+            background: 'bg-emerald-50'
         },
         {
             label: 'Assigned',
@@ -749,20 +749,20 @@ const StockInventory = () => {
         {
             label: 'Ordered',
             value: item.orderedQuantity ?? 0,
-            color: 'text-purple-700',
-            background: 'bg-purple-50'
+            color: 'text-violet-700',
+            background: 'bg-violet-50'
         }
     ];
 
     return (
-        <div className="min-h-screen bg-slate-50">
+        <div className="min-h-screen bg-slate-100 flex">
 
             <AdminSidebar />
 
-            <main className="min-w-0 flex-1 lg:ml-64">
+            <main className="flex-1 lg:ml-64 min-w-0">
 
                 {/* TOP HEADER */}
-                <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-4 pl-16 backdrop-blur sm:px-6 lg:px-8">
+                <header className="bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between sticky top-0 z-20">
                     <div>
                         <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
                             UMC / ADMIN / {activeMenu}
@@ -782,13 +782,13 @@ const StockInventory = () => {
                             </p>
                         </div>
 
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 font-bold text-blue-700">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100 border border-orange-200 font-bold text-orange-600">
                             {user?.name?.charAt(0) || 'A'}
                         </div>
                     </div>
                 </header>
 
-                <div className="mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">
+                <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto">
 
                     {/* PAGE TITLE */}
                     <div className="mb-7 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -796,7 +796,7 @@ const StockInventory = () => {
                             <div>
                                 <button
                                     onClick={() => navigate('/admin/dashboard')}
-                                    className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-blue-600 transition-colors hover:text-blue-800"
+                                    className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-orange-600 transition-colors hover:text-orange-700"
                                 >
                                     <span>←</span>
                                     Back to Dashboard
@@ -817,7 +817,7 @@ const StockInventory = () => {
                                         setScannerError('');
                                         setShowScanner(true);
                                     }}
-                                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-purple-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-purple-700"
+                                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-violet-700"
                                 >
                                     <span>▦</span>
                                     Scan QR / Barcode
@@ -891,48 +891,48 @@ const StockInventory = () => {
                             <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
 
                                 {/* MODERN MODAL HEADER */}
-<div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-blue-950 to-blue-800 px-5 py-6 text-white sm:px-7">
-    <div className="absolute -right-10 -top-16 h-48 w-48 rounded-full bg-white/5" />
-    <div className="absolute -bottom-20 right-32 h-40 w-40 rounded-full bg-blue-400/10" />
+                                <div className="relative overflow-hidden bg-gradient-to-r from-blue-700 via-blue-900 to-blue-950 px-5 py-6 text-white sm:px-7">
+                                    <div className="absolute -right-10 -top-16 h-48 w-48 rounded-full bg-white/5" />
+                                    <div className="absolute -bottom-20 right-32 h-40 w-40 rounded-full bg-blue-400/10" />
 
-    <div className="relative flex items-start justify-between gap-4">
-        <div className="min-w-0">
+                                    <div className="relative flex items-start justify-between gap-4">
+                                        <div className="min-w-0">
 
-            {/* SELECTED PRODUCT NAME - TOP */}
-            <h2 className="text-xl font-bold sm:text-2xl">
-                {selectedUnitProduct.name}
-            </h2>
+                                            {/* SELECTED PRODUCT NAME - TOP */}
+                                            <h2 className="text-xl font-bold sm:text-2xl">
+                                                {selectedUnitProduct.name}
+                                            </h2>
 
-            {/* MODAL INFORMATION */}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="rounded-lg bg-white/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-blue-100">
-                    Stock Inventory
-                </span>
+                                            {/* MODAL INFORMATION */}
+                                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                                                <span className="rounded-lg bg-white/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-blue-100">
+                                                    Stock Inventory
+                                                </span>
 
-                <span className="text-xs text-blue-200">
-                    Individual Devices
-                </span>
-            </div>
+                                                <span className="text-xs text-blue-200">
+                                                    Individual Devices
+                                                </span>
+                                            </div>
 
-            <p className="mt-2 text-sm font-medium text-blue-100">
-                Device Management
-            </p>
-        </div>
+                                            <p className="mt-2 text-sm font-medium text-blue-100">
+                                                Device Management
+                                            </p>
+                                        </div>
 
-        <button
-            type="button"
-            onClick={() => {
-                setSelectedUnitProduct(null);
-                setUnitSearch('');
-            }}
-            className="relative shrink-0 rounded-xl border border-white/20 bg-white/10 px-3.5 py-2.5 font-bold text-white transition-colors hover:bg-white/20"
-        >
-            ✕
-        </button>
-    </div>
-</div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedUnitProduct(null);
+                                                setUnitSearch('');
+                                            }}
+                                            className="relative shrink-0 rounded-xl border border-white/20 bg-white/10 px-3.5 py-2.5 font-bold text-white transition-colors hover:bg-white/20"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                </div>
 
-<div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+                                <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
 
                                     {/* UNIT SUMMARY */}
                                     <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -946,11 +946,11 @@ const StockInventory = () => {
                                             </p>
                                         </div>
 
-                                        <div className="rounded-xl border border-green-100 bg-green-50 p-4">
-                                            <p className="text-xs font-medium text-green-700">
+                                        <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+                                            <p className="text-xs font-medium text-emerald-700">
                                                 Available
                                             </p>
-                                            <p className="mt-2 text-2xl font-bold text-green-700">
+                                            <p className="mt-2 text-2xl font-bold text-emerald-700">
                                                 {selectedUnitProduct.availableQuantity ?? 0}
                                             </p>
                                         </div>
@@ -1137,11 +1137,11 @@ const StockInventory = () => {
                                                             !unit.asset;
 
                                                         const statusStyle = {
-                                                            Available: 'bg-green-50 text-green-700',
+                                                            Available: 'bg-emerald-50 text-emerald-700',
                                                             Assigned: 'bg-blue-50 text-blue-700',
                                                             Damaged: 'bg-red-50 text-red-700',
                                                             'Under Repair': 'bg-orange-50 text-orange-700',
-                                                            Returned: 'bg-purple-50 text-purple-700'
+                                                            Returned: 'bg-violet-50 text-violet-700'
                                                         };
 
                                                         const receivedDate =
@@ -1548,7 +1548,7 @@ const StockInventory = () => {
                                                                     <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
                                                                         isLowStock
                                                                             ? 'bg-red-50 text-red-600'
-                                                                            : 'bg-green-50 text-green-700'
+                                                                            : 'bg-emerald-50 text-emerald-700'
                                                                     }`}>
                                                                         {isLowStock ? 'Low Stock' : 'In Stock'}
                                                                     </span>
@@ -1664,7 +1664,7 @@ const StockInventory = () => {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleViewUnits(item)}
-                                                                className="rounded-lg bg-purple-50 px-3.5 py-2.5 text-xs font-semibold text-purple-700 transition-colors hover:bg-purple-100"
+                                                                className="rounded-lg bg-violet-50 px-3.5 py-2.5 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-100"
                                                             >
                                                                 View Units ({item.totalReceivedQuantity ?? 0})
                                                             </button>
@@ -1696,7 +1696,7 @@ const StockInventory = () => {
                                                                         behavior: 'smooth'
                                                                     });
                                                                 }}
-                                                                className="rounded-lg bg-green-600 px-3.5 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-green-700"
+                                                                className="rounded-lg bg-emerald-600 px-3.5 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
                                                             >
                                                                 + Receive Stock
                                                             </button>

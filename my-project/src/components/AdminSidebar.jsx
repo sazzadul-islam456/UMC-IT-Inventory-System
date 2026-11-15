@@ -16,6 +16,7 @@ const AdminSidebar = () => {
         { name: 'Stock Inventory', icon: '📦' },
         { name: 'Supplier Return', icon: '↩' },
         { name: 'Asset Management', icon: '▣' },
+        { name: 'Assignment Management', icon: '📋' },
         { name: 'Departments', icon: '▤' },
         { name: 'Room Management', icon: '🚪' },
         { name: 'Reports', icon: '▥' },
@@ -31,15 +32,17 @@ const AdminSidebar = () => {
             ? 'Supplier Return'
             : location.pathname === '/admin/assets'
                 ? 'Asset Management'
-                : location.pathname === '/admin/departments'
-                    ? 'Departments'
-                    : location.pathname === '/admin/rooms'
-                        ? 'Room Management'
-                        : location.pathname === '/admin/users'
-                            ? 'User Management'
-                            : location.pathname === '/admin/dashboard'
-                                ? (params.get('menu') || 'Dashboard')
-                                : '';
+                : location.pathname === '/admin/assignments'
+                    ? 'Assignment Management'
+                    : location.pathname === '/admin/departments'
+                        ? 'Departments'
+                        : location.pathname === '/admin/rooms'
+                            ? 'Room Management'
+                            : location.pathname === '/admin/users'
+                                ? 'User Management'
+                                : location.pathname === '/admin/dashboard'
+                                    ? (params.get('menu') || 'Dashboard')
+                                    : '';
 
     // MENU NAVIGATION - Search: MENU NAVIGATION
     const handleNavigation = (menuName) => {
@@ -57,6 +60,11 @@ const AdminSidebar = () => {
 
         if (menuName === 'Asset Management') {
             navigate('/admin/assets');
+            return;
+        }
+
+        if (menuName === 'Assignment Management') {
+            navigate('/admin/assignments');
             return;
         }
 

@@ -11,12 +11,59 @@ import Asset from '../models/Asset.js';
 
 // SUPPLIER RETURN CONTROLLERS - Search: SUPPLIER RETURN CONTROLLERS
 
+// NORMALIZE SUPPLIER NAME
+const normalizeSupplierName = (name = '') =>
+    String(name)
+        .trim()
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+
+// FIND OR CREATE SUPPLIER FROM DATABASE
+const findOrCreateSupplier = async (supplierName, session) => {
+    const normalizedName = normalizeSupplierName(supplierName);
+
+    // GET SUPPLIERS FROM DATABASE
+    const supplierRecords = await Supplier.find({})
+        .select('companyName contactPerson phone email address isActive')
+        .session(session)
+        .lean();
+
+    // FIND EXACT SUPPLIER NAME
+    const supplier = supplierRecords.find(
+        item =>
+            normalizeSupplierName(item.companyName) === normalizedName
+    );
+
+    // USE EXISTING SUPPLIER
+    if (supplier) {
+        return supplier;
+    }
+
+    // CREATE SUPPLIER ONLY IF NOT FOUND
+    const newSuppliers = await Supplier.create(
+        [
+            {
+                companyName: String(supplierName).trim(),
+                isActive: true
+            }
+        ],
+        { session }
+    );
+
+    return newSuppliers[0].toObject();
+};
+
 
 // CREATE BULK SUPPLIER RETURN
 export const createSupplierReturn = async (req, res) => {
-    const session = await mongoose.startSession();
+    let session;
+
+    console.log('========== SUPPLIER RETURN API CALLED ==========');
+    console.log('REQUEST BODY:', JSON.stringify(req.body));
 
     try {
+        session = await mongoose.startSession();
+
         const {
             returnDate,
             returnReason,
@@ -24,6 +71,8 @@ export const createSupplierReturn = async (req, res) => {
             notes,
             items
         } = req.body;
+
+        console.log('STEP 1: VALIDATING RETURN ITEMS');
 
         // VALIDATE DEVICE LIST
         if (!Array.isArray(items) || items.length === 0) {
@@ -75,6 +124,8 @@ export const createSupplierReturn = async (req, res) => {
 
         await session.withTransaction(async () => {
 
+            console.log('STEP 2: FINDING SELECTED STOCK UNITS');
+
             // FIND SELECTED STOCK UNITS
             const stockUnits = await StockUnit.find({
                 _id: { $in: stockUnitIds }
@@ -86,12 +137,10 @@ export const createSupplierReturn = async (req, res) => {
                 );
             }
 
-            // ALLOWED RETURN STATUSES
+            // ONLY AVAILABLE AND ASSIGNED DEVICES CAN BE RETURNED
             const allowedStatuses = [
                 'Available',
-                'Assigned',
-                'Damaged',
-                'Under Repair'
+                'Assigned'
             ];
 
             // VALIDATE DEVICE STATUS
@@ -118,6 +167,8 @@ export const createSupplierReturn = async (req, res) => {
                 );
             }
 
+            console.log('STEP 3: FINDING STOCK PRODUCTS');
+
             // FIND STOCK PRODUCTS
             const stockItemIds = [
                 ...new Set(
@@ -133,11 +184,15 @@ export const createSupplierReturn = async (req, res) => {
                 const foundStockItemIds = new Set(
                     stockItems.map(item => item._id.toString())
                 );
+
                 const missingStockItemIds = stockItemIds.filter(
                     id => !foundStockItemIds.has(id)
                 );
+
                 const affectedUnits = stockUnits
-                    .filter(unit => missingStockItemIds.includes(unit.stockItem.toString()))
+                    .filter(unit =>
+                        missingStockItemIds.includes(unit.stockItem.toString())
+                    )
                     .map(unit => unit.unitCode || unit._id.toString());
 
                 throw new Error(
@@ -152,11 +207,13 @@ export const createSupplierReturn = async (req, res) => {
                 ])
             );
 
-            // AUTO FIND SUPPLIER FROM STOCK ITEM
+            console.log('STEP 4: FINDING SUPPLIER FROM STOCK ITEM');
+
+            // GET SUPPLIER NAME FROM SAVED STOCK ITEM
             const supplierNames = [
                 ...new Set(
                     stockItems.map(item =>
-                        (item.supplierName || '').trim().toLowerCase()
+                        normalizeSupplierName(item.supplierName)
                     )
                 )
             ];
@@ -179,25 +236,19 @@ export const createSupplierReturn = async (req, res) => {
                 item => item.supplierName?.trim()
             ).supplierName.trim();
 
-            const escapedSupplierName = supplierName.replace(
-                /[.*+?^${}()|[\]\\]/g,
-                '\\$&'
+            console.log('SAVED PRODUCT SUPPLIER:', supplierName);
+
+            // FIND EXISTING SUPPLIER OR CREATE IF NOT FOUND
+            const supplier = await findOrCreateSupplier(
+                supplierName,
+                session
             );
 
-            // FIND ACTIVE SUPPLIER AUTOMATICALLY
-            const supplier = await Supplier.findOne({
-                companyName: {
-                    $regex: `^${escapedSupplierName}$`,
-                    $options: 'i'
-                },
-                isActive: true
-            }).session(session);
-
-            if (!supplier) {
-                throw new Error(
-                    `Active Supplier "${supplierName}" not found in Supplier Management`
-                );
-            }
+            console.log(
+                'STEP 5: SUPPLIER READY:',
+                supplier.companyName,
+                supplier._id
+            );
 
             // FIND LINKED ASSETS
             const assetIds = stockUnits
@@ -248,9 +299,7 @@ export const createSupplierReturn = async (req, res) => {
                 if (!quantityMap.has(productId)) {
                     quantityMap.set(productId, {
                         Available: 0,
-                        Assigned: 0,
-                        Damaged: 0,
-                        'Under Repair': 0
+                        Assigned: 0
                     });
                 }
 
@@ -272,18 +321,6 @@ export const createSupplierReturn = async (req, res) => {
                         `Insufficient assigned quantity for ${stock.name}`
                     );
                 }
-
-                if (stock.damagedQuantity < quantities.Damaged) {
-                    throw new Error(
-                        `Insufficient damaged quantity for ${stock.name}`
-                    );
-                }
-
-                if (stock.underRepairQuantity < quantities['Under Repair']) {
-                    throw new Error(
-                        `Insufficient under repair quantity for ${stock.name}`
-                    );
-                }
             }
 
             // GENERATE UNIQUE RETURN NUMBER
@@ -291,6 +328,8 @@ export const createSupplierReturn = async (req, res) => {
                 `RET-${finalReturnDate.getFullYear()}-${randomUUID()
                     .slice(0, 8)
                     .toUpperCase()}`;
+
+            console.log('STEP 6: CREATING SUPPLIER RETURN');
 
             // CREATE SUPPLIER RETURN DOCUMENT
             const returnDocuments = await SupplierReturn.create(
@@ -473,23 +512,6 @@ export const createSupplierReturn = async (req, res) => {
                     stockUpdate.assignedQuantity = -quantities.Assigned;
                 }
 
-                if (quantities.Damaged > 0) {
-                    stockFilter.damagedQuantity = {
-                        $gte: quantities.Damaged
-                    };
-
-                    stockUpdate.damagedQuantity = -quantities.Damaged;
-                }
-
-                if (quantities['Under Repair'] > 0) {
-                    stockFilter.underRepairQuantity = {
-                        $gte: quantities['Under Repair']
-                    };
-
-                    stockUpdate.underRepairQuantity =
-                        -quantities['Under Repair'];
-                }
-
                 stockOperations.push({
                     updateOne: {
                         filter: stockFilter,
@@ -510,6 +532,8 @@ export const createSupplierReturn = async (req, res) => {
                     'Stock quantity update failed. Return cancelled'
                 );
             }
+
+            console.log('STEP 7: SUPPLIER RETURN COMPLETED');
         });
 
         return res.status(201).json({
@@ -528,10 +552,11 @@ export const createSupplierReturn = async (req, res) => {
         });
 
     } finally {
-        await session.endSession();
+        if (session) {
+            await session.endSession();
+        }
     }
 };
-
 
 
 // GET ELIGIBLE STOCK UNITS FOR SUPPLIER RETURN
@@ -544,12 +569,10 @@ export const getEligibleStockUnits = async (req, res) => {
             limit = 20
         } = req.query;
 
-        // ALLOWED RETURN STATUSES
+        // ONLY AVAILABLE AND ASSIGNED DEVICES
         const allowedStatuses = [
             'Available',
-            'Assigned',
-            'Damaged',
-            'Under Repair'
+            'Assigned'
         ];
 
         // VALIDATE STATUS FILTER
@@ -673,7 +696,6 @@ export const getEligibleStockUnits = async (req, res) => {
         });
     }
 };
-
 
 
 // GET ALL SUPPLIER RETURNS - HISTORY
@@ -817,7 +839,6 @@ export const getAllSupplierReturns = async (req, res) => {
         });
     }
 };
-
 
 
 // GET SINGLE SUPPLIER RETURN DETAILS
