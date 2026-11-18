@@ -31,6 +31,7 @@ const RoomManagement = () => {
     const [formData, setFormData] = useState({
         name: '',
         roomNumber: '',
+        floorLevel: '',
         department: '',
         inCharge: '',
         description: '',
@@ -130,6 +131,7 @@ const RoomManagement = () => {
         setFormData({
             name: '',
             roomNumber: '',
+            floorLevel: '',
             department: '',
             inCharge: '',
             description: '',
@@ -166,6 +168,7 @@ const RoomManagement = () => {
                     body: JSON.stringify({
                         name: formData.name.trim(),
                         roomNumber: formData.roomNumber.trim(),
+                        floorLevel: formData.floorLevel.trim(),
                         department: formData.department,
                         inCharge: formData.inCharge.trim(),
                         description: formData.description.trim(),
@@ -206,6 +209,7 @@ const RoomManagement = () => {
         setFormData({
             name: room.name || '',
             roomNumber: room.roomNumber || '',
+            floorLevel: room.floorLevel || '',
             department: room.department?._id || '',
             inCharge: room.inCharge || '',
             description: room.description || '',
@@ -256,6 +260,7 @@ const RoomManagement = () => {
         return (
             room.name?.toLowerCase().includes(searchText) ||
             room.roomNumber?.toLowerCase().includes(searchText) ||
+            room.floorLevel?.toLowerCase().includes(searchText) ||
             room.inCharge?.toLowerCase().includes(searchText) ||
             room.department?.name?.toLowerCase().includes(searchText)
         );
@@ -489,7 +494,22 @@ const RoomManagement = () => {
                                         name="roomNumber"
                                         value={formData.roomNumber}
                                         onChange={handleInputChange}
-                                        placeholder="e.g. 101"
+                                        placeholder="e.g. 601"
+                                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                                        Floor Level
+                                    </label>
+
+                                    <input
+                                        type="text"
+                                        name="floorLevel"
+                                        value={formData.floorLevel}
+                                        onChange={handleInputChange}
+                                        placeholder="e.g. Level 6 or 6th Floor"
                                         className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
                                     />
                                 </div>
@@ -728,7 +748,7 @@ const RoomManagement = () => {
                 ) : (
                     <div className="overflow-x-auto">
 
-                        <table className="w-full min-w-[950px] text-left">
+                        <table className="w-full min-w-[1050px] text-left">
 
                             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
 
@@ -736,6 +756,7 @@ const RoomManagement = () => {
                                     <th className="px-6 py-4 font-bold">#</th>
                                     <th className="px-5 py-4 font-bold">Room</th>
                                     <th className="px-5 py-4 font-bold">Room Number</th>
+                                    <th className="px-5 py-4 font-bold">Floor Level</th>
                                     <th className="px-5 py-4 font-bold">Department</th>
                                     <th className="px-5 py-4 font-bold">In-Charge</th>
                                     <th className="px-5 py-4 text-center font-bold">Status</th>
@@ -780,6 +801,10 @@ const RoomManagement = () => {
 
                                         <td className="px-5 py-4 text-sm font-medium text-slate-600">
                                             {room.roomNumber || 'Not assigned'}
+                                        </td>
+
+                                        <td className="px-5 py-4 text-sm font-medium text-slate-600">
+                                            {room.floorLevel || 'Not assigned'}
                                         </td>
 
                                         <td className="px-5 py-4 text-sm text-slate-600">

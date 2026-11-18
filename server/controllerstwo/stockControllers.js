@@ -6,6 +6,7 @@ import Supplier from '../models/Supplier.js';
 import StockItem from '../models/StockItem.js';
 import StockUnit from '../models/StockUnit.js';
 import StockReceipt from '../models/StockReceipt.js';
+import Counter from '../models/Counter.js';
 
 // STOCK CONTROLLERS - Search: STOCK CONTROLLERS
 
@@ -109,11 +110,23 @@ const createReceiptAndUnits = async ({
     const receipt = receipts[0];
 
     // CREATE INDIVIDUAL STOCK UNITS
-    const stockUnits = Array.from(
-        { length: quantity },
-        (_, index) => ({
+    const stockUnits = [];
+
+    for (let index = 0; index < quantity; index++) {
+        const counter = await Counter.findOneAndUpdate(
+            { _id: 'stockUnit' },
+            { $inc: { sequence: 1 } },
+            {
+                new: true,
+                upsert: true,
+                session,
+                setDefaultsOnInsert: true
+            }
+        );
+
+        stockUnits.push({
             stockItem: stockItem._id,
-            unitCode: `UMC-UNIT-${randomUUID()}`,
+            unitCode: `UMC-UNIT-${String(counter.sequence).padStart(6, '0')}`,
 
             ...(cleanedSerials[index]
                 ? { serialNumber: cleanedSerials[index] }
@@ -122,8 +135,8 @@ const createReceiptAndUnits = async ({
             receipt: receipt._id,
             status: 'Available',
             asset: null
-        })
-    );
+        });
+    }
 
     await StockUnit.insertMany(stockUnits, {
         ordered: true,

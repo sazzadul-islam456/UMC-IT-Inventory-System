@@ -21,6 +21,9 @@ import StockInventory from './pages/Admin/StockInventory.jsx';
 import DepartmentManagement from './pages/Admin/DepartmentManagement.jsx';
 import RoomManagement from './pages/Admin/RoomManagement.jsx';
 
+// ROOM INVENTORY IMPORT
+import RoomInventory from './pages/Admin/RoomInventory.jsx';
+
 // ASSET MANAGEMENT IMPORT - Search: ASSET MANAGEMENT IMPORT
 import AssetManagement from './pages/Admin/AssetManagement.jsx';
 
@@ -29,6 +32,9 @@ import AssignmentManagement from './pages/Admin/AssignmentManagement.jsx';
 
 // SUPPLIER RETURN MANAGEMENT IMPORT
 import SupplierReturnManagement from './pages/Admin/SupplierReturnManagement.jsx';
+
+// DAMAGE & REPAIR MANAGEMENT IMPORT
+import DamageRepairManagement from './pages/Admin/DamageRepairManagement.jsx';
 
 const App = () => {
     return (
@@ -86,6 +92,16 @@ const App = () => {
                     }
                 />
 
+                {/* ROOM INVENTORY ROUTE */}
+                <Route
+                    path="/admin/room-inventory"
+                    element={
+                        <ProtectedRoutes requireRole={['admin']}>
+                            <RoomInventory />
+                        </ProtectedRoutes>
+                    }
+                />
+
                 {/* ASSET MANAGEMENT ROUTE - Search: ASSET MANAGEMENT ROUTE */}
                 <Route
                     path="/admin/assets"
@@ -112,6 +128,16 @@ const App = () => {
                     element={
                         <ProtectedRoutes requireRole={['admin']}>
                             <SupplierReturnManagement />
+                        </ProtectedRoutes>
+                    }
+                />
+
+                {/* DAMAGE & REPAIR MANAGEMENT ROUTE */}
+                <Route
+                    path="/admin/damage-repair"
+                    element={
+                        <ProtectedRoutes requireRole={['admin']}>
+                            <DamageRepairManagement />
                         </ProtectedRoutes>
                     }
                 />

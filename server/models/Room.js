@@ -1,3 +1,4 @@
+
 import mongoose from 'mongoose';
 
 const roomSchema = new mongoose.Schema(
@@ -9,6 +10,13 @@ const roomSchema = new mongoose.Schema(
         },
 
         roomNumber: {
+            type: String,
+            trim: true,
+            default: ''
+        },
+
+        // FLOOR LEVEL
+        floorLevel: {
             type: String,
             trim: true,
             default: ''

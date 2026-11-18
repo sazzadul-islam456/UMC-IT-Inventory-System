@@ -15,6 +15,7 @@ const StockInventory = () => {
 
     // STOCK INVENTORY STATE
     const [editingId, setEditingId] = useState(null);
+    const [receivingStockId, setReceivingStockId] = useState(null);
     const [stockItems, setStockItems] = useState([]);
 
     const [stats, setStats] = useState({
@@ -305,6 +306,7 @@ const StockInventory = () => {
         });
 
         setEditingId(null);
+        setReceivingStockId(null);
         setSerialNumbers([]);
     };
 
@@ -357,15 +359,24 @@ const StockInventory = () => {
             return;
         }
 
-        const additionalQuantity = getAdditionalQuantity();
+        const isEditing = Boolean(editingId);
+        const isReceiving = Boolean(receivingStockId);
+
+        const quantity = Number(formData.totalReceivedQuantity);
 
         if (
-            !Number.isSafeInteger(Number(formData.totalReceivedQuantity)) ||
-            Number(formData.totalReceivedQuantity) < 0
+            !Number.isSafeInteger(quantity) ||
+            quantity < (isReceiving ? 1 : 0)
         ) {
-            alert('Please enter a valid Received Quantity');
+            alert(
+                isReceiving
+                    ? 'Please enter a valid Received Quantity (minimum 1)'
+                    : 'Please enter a valid Received Quantity'
+            );
             return;
         }
+
+        const additionalQuantity = getAdditionalQuantity();
 
         if (serialNumbers.length !== additionalQuantity) {
             alert('Serial number inputs do not match additional quantity');
@@ -400,32 +411,62 @@ const StockInventory = () => {
         setSaving(true);
 
         try {
-            const isEditing = Boolean(editingId);
+            let requestUrl = API_URL;
+            let requestMethod = 'POST';
+            let requestBody = {};
 
-            const response = await fetch(
-                isEditing ? `${API_URL}/${editingId}` : API_URL,
-                {
-                    method: isEditing ? 'PUT' : 'POST',
-                    headers: getHeaders(),
+            if (isReceiving) {
+                // RECEIVE STOCK INTO AN EXISTING PRODUCT
+                requestUrl = `${API_URL}/${receivingStockId}/receive`;
+                requestMethod = 'POST';
 
-                    body: JSON.stringify({
-                        ...formData,
+                requestBody = {
+                    quantity,
+                    serialNumbers: serialNumbers.map(serial =>
+                        serial.trim()
+                    ),
+                    supplier: formData.supplierName.trim(),
+                    description: formData.description.trim()
+                };
 
-                        totalReceivedQuantity: Number(
-                            formData.totalReceivedQuantity
-                        ),
+            } else if (isEditing) {
+                // UPDATE EXISTING PRODUCT
+                requestUrl = `${API_URL}/${editingId}`;
+                requestMethod = 'PUT';
 
-                        minimumStockLevel: Number(
-                            formData.minimumStockLevel
-                        ),
+                requestBody = {
+                    ...formData,
+                    totalReceivedQuantity: quantity,
+                    minimumStockLevel: Number(
+                        formData.minimumStockLevel
+                    ),
+                    serialNumbers: serialNumbers.map(serial =>
+                        serial.trim()
+                    )
+                };
 
-                        // SEND ONLY NEW UNITS' SERIAL NUMBERS
-                        serialNumbers: serialNumbers.map(serial =>
-                            serial.trim()
-                        )
-                    })
-                }
-            );
+            } else {
+                // CREATE NEW PRODUCT
+                requestUrl = API_URL;
+                requestMethod = 'POST';
+
+                requestBody = {
+                    ...formData,
+                    totalReceivedQuantity: quantity,
+                    minimumStockLevel: Number(
+                        formData.minimumStockLevel
+                    ),
+                    serialNumbers: serialNumbers.map(serial =>
+                        serial.trim()
+                    )
+                };
+            }
+
+            const response = await fetch(requestUrl, {
+                method: requestMethod,
+                headers: getHeaders(),
+                body: JSON.stringify(requestBody)
+            });
 
             const data = await response.json();
 
@@ -436,9 +477,14 @@ const StockInventory = () => {
             }
 
             alert(
-                isEditing
-                    ? data.message || 'Stock item updated successfully!'
-                    : data.message || 'Stock item added successfully!'
+                data.message ||
+                (
+                    isReceiving
+                        ? 'Stock received successfully!'
+                        : isEditing
+                            ? 'Stock item updated successfully!'
+                            : 'Stock item added successfully!'
+                )
             );
 
             resetForm();
@@ -455,6 +501,7 @@ const StockInventory = () => {
 
     // EDIT STOCK ITEM
     const handleEditStock = (item) => {
+        setReceivingStockId(null);
         setEditingId(item._id);
 
         setFormData({
@@ -674,13 +721,13 @@ const StockInventory = () => {
             title: 'Total Received',
             value: stats.totalReceived,
             icon: '📥',
-            color: 'bg-violet-50 text-violet-600'
+            color: 'bg-orange-50 text-orange-600'
         },
         {
             title: 'Available Stock',
             value: stats.available,
             icon: '✅',
-            color: 'bg-emerald-50 text-emerald-600'
+            color: 'bg-blue-50 text-blue-600'
         },
         {
             title: 'Assigned',
@@ -692,7 +739,7 @@ const StockInventory = () => {
             title: 'Damaged',
             value: stats.damaged,
             icon: '⚠️',
-            color: 'bg-red-50 text-red-600'
+            color: 'bg-orange-50 text-orange-600'
         },
         {
             title: 'Under Repair',
@@ -710,7 +757,7 @@ const StockInventory = () => {
             title: 'Low Stock',
             value: stats.lowStock,
             icon: '📉',
-            color: 'bg-red-50 text-red-600'
+            color: 'bg-orange-50 text-orange-600'
         }
     ];
 
@@ -725,8 +772,8 @@ const StockInventory = () => {
         {
             label: 'Available',
             value: item.availableQuantity ?? 0,
-            color: 'text-emerald-700',
-            background: 'bg-emerald-50'
+            color: 'text-blue-700',
+            background: 'bg-blue-50'
         },
         {
             label: 'Assigned',
@@ -737,8 +784,8 @@ const StockInventory = () => {
         {
             label: 'Damaged',
             value: item.damagedQuantity ?? 0,
-            color: 'text-red-700',
-            background: 'bg-red-50'
+            color: 'text-orange-700',
+            background: 'bg-orange-50'
         },
         {
             label: 'Under Repair',
@@ -749,22 +796,22 @@ const StockInventory = () => {
         {
             label: 'Ordered',
             value: item.orderedQuantity ?? 0,
-            color: 'text-violet-700',
-            background: 'bg-violet-50'
+            color: 'text-orange-700',
+            background: 'bg-orange-50'
         }
     ];
 
     return (
-        <div className="min-h-screen bg-slate-100 flex">
+        <div className="flex min-h-screen min-w-0 bg-slate-50">
 
             <AdminSidebar />
 
-            <main className="flex-1 lg:ml-64 min-w-0">
+            <main className="min-w-0 flex-1 lg:ml-64">
 
                 {/* TOP HEADER */}
-                <header className="bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between sticky top-0 z-20">
-                    <div>
-                        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b-2 border-orange-500 bg-white px-4 py-4 sm:px-6 lg:px-8">
+                    <div className="min-w-0">
+                        <p className="break-words text-[11px] font-bold uppercase tracking-[0.16em] text-blue-600">
                             UMC / ADMIN / {activeMenu}
                         </p>
                         <p className="mt-1 text-sm font-bold text-slate-800">
@@ -772,7 +819,7 @@ const StockInventory = () => {
                         </p>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex shrink-0 items-center gap-3">
                         <div className="hidden text-right sm:block">
                             <p className="text-sm font-semibold text-slate-800">
                                 {user?.name || 'Administrator'}
@@ -782,18 +829,18 @@ const StockInventory = () => {
                             </p>
                         </div>
 
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100 border border-orange-200 font-bold text-orange-600">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full border border-orange-200 bg-orange-100 font-bold text-orange-600">
                             {user?.name?.charAt(0) || 'A'}
                         </div>
                     </div>
                 </header>
 
-                <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto">
+                <div className="mx-auto min-w-0 max-w-[1600px] p-3 sm:p-6 lg:p-8">
 
                     {/* PAGE TITLE */}
-                    <div className="mb-7 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                    <div className="mb-7 rounded-2xl border border-blue-100 border-t-4 border-t-orange-500 bg-white p-5 shadow-sm sm:p-6">
                         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-                            <div>
+                            <div className="min-w-0">
                                 <button
                                     onClick={() => navigate('/admin/dashboard')}
                                     className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-orange-600 transition-colors hover:text-orange-700"
@@ -802,7 +849,7 @@ const StockInventory = () => {
                                     Back to Dashboard
                                 </button>
 
-                                <h1 className="text-2xl font-bold tracking-tight text-slate-800 sm:text-3xl">
+                                <h1 className="break-words text-2xl font-bold tracking-tight text-blue-950 sm:text-3xl">
                                     Stock Inventory
                                 </h1>
 
@@ -817,7 +864,7 @@ const StockInventory = () => {
                                         setScannerError('');
                                         setShowScanner(true);
                                     }}
-                                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-violet-700"
+                                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-orange-600"
                                 >
                                     <span>▦</span>
                                     Scan QR / Barcode
@@ -828,7 +875,7 @@ const StockInventory = () => {
                                         resetForm();
                                         setShowForm(!showForm);
                                     }}
-                                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+                                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
                                 >
                                     {showForm ? 'Close Form' : '+ Manual Add Product'}
                                 </button>
@@ -838,34 +885,34 @@ const StockInventory = () => {
 
                     {/* SCANNER MODAL */}
                     {showScanner && (
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-                            <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-                                <div className="flex items-center justify-between border-b border-slate-100 p-5">
-                                    <div>
-                                        <h2 className="text-lg font-bold text-slate-800">
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/70 p-3 backdrop-blur-sm sm:p-4">
+                            <div className="my-auto w-full max-w-lg overflow-hidden rounded-2xl border border-orange-200 bg-white shadow-2xl">
+                                <div className="flex items-center justify-between gap-3 border-b border-orange-100 bg-blue-950 p-4 text-white sm:p-5">
+                                    <div className="min-w-0">
+                                        <h2 className="break-words text-lg font-bold">
                                             QR / Barcode Scanner
                                         </h2>
-                                        <p className="mt-1 text-sm text-slate-500">
+                                        <p className="mt-1 text-sm text-blue-100">
                                             Place the product code in front of the camera.
                                         </p>
                                     </div>
 
                                     <button
                                         onClick={() => setShowScanner(false)}
-                                        className="rounded-lg bg-red-50 px-3 py-2 font-bold text-red-600 transition-colors hover:bg-red-100"
+                                        className="shrink-0 rounded-lg bg-orange-500 px-3 py-2 font-bold text-white transition-colors hover:bg-orange-600"
                                     >
                                         ✕
                                     </button>
                                 </div>
 
-                                <div className="p-5">
+                                <div className="p-4 sm:p-5">
                                     <div
                                         id="stock-code-reader"
                                         className="w-full overflow-hidden rounded-xl border border-slate-200"
                                     />
 
                                     {scannerError && (
-                                        <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">
+                                        <p className="mt-4 break-words rounded-lg bg-orange-50 p-3 text-sm text-orange-700">
                                             {scannerError}
                                         </p>
                                     )}
@@ -876,7 +923,7 @@ const StockInventory = () => {
 
                                     <button
                                         onClick={() => setShowScanner(false)}
-                                        className="mt-5 w-full rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                                        className="mt-5 w-full rounded-xl bg-blue-700 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
                                     >
                                         Close Scanner
                                     </button>
@@ -887,36 +934,39 @@ const StockInventory = () => {
 
                     {/* INDIVIDUAL STOCK UNITS MODAL */}
                     {selectedUnitProduct && (
-                        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm sm:p-5">
-                            <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                        <div className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-slate-950/75 p-2 backdrop-blur-sm sm:items-center sm:p-4">
+                            <div className="my-auto flex max-h-[calc(100dvh-1rem)] w-full max-w-6xl min-w-0 flex-col overflow-hidden rounded-2xl border border-orange-200 bg-white shadow-2xl sm:max-h-[94dvh]">
 
-                                {/* MODERN MODAL HEADER */}
-                                <div className="relative overflow-hidden bg-gradient-to-r from-blue-700 via-blue-900 to-blue-950 px-5 py-6 text-white sm:px-7">
+                                {/* MODAL HEADER */}
+                                <div className="relative shrink-0 overflow-hidden border-b-4 border-orange-500 bg-gradient-to-r from-blue-700 via-blue-900 to-blue-950 px-4 py-5 text-white sm:px-7 sm:py-6">
                                     <div className="absolute -right-10 -top-16 h-48 w-48 rounded-full bg-white/5" />
-                                    <div className="absolute -bottom-20 right-32 h-40 w-40 rounded-full bg-blue-400/10" />
+                                    <div className="absolute -bottom-20 right-32 h-40 w-40 rounded-full bg-orange-400/10" />
 
-                                    <div className="relative flex items-start justify-between gap-4">
-                                        <div className="min-w-0">
-
-                                            {/* SELECTED PRODUCT NAME - TOP */}
-                                            <h2 className="text-xl font-bold sm:text-2xl">
+                                    <div className="relative flex items-start justify-between gap-3 sm:gap-4">
+                                        <div className="min-w-0 flex-1">
+                                            <h2 className="break-words text-lg font-bold leading-snug sm:text-2xl">
                                                 {selectedUnitProduct.name}
                                             </h2>
 
-                                            {/* MODAL INFORMATION */}
                                             <div className="mt-3 flex flex-wrap items-center gap-2">
-                                                <span className="rounded-lg bg-white/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-blue-100">
+                                                <span className="rounded-lg bg-orange-500 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
                                                     Stock Inventory
                                                 </span>
 
-                                                <span className="text-xs text-blue-200">
+                                                <span className="break-words text-xs text-blue-100">
                                                     Individual Devices
                                                 </span>
                                             </div>
 
-                                            <p className="mt-2 text-sm font-medium text-blue-100">
-                                                Device Management
+                                            <p className="mt-2 break-words text-sm font-medium text-blue-100">
+                                                {[selectedUnitProduct.brand, selectedUnitProduct.model].filter(Boolean).join(' / ') || 'Device Management'}
                                             </p>
+
+                                            {selectedUnitProduct.sku && (
+                                                <p className="mt-1 break-all text-xs text-blue-200">
+                                                    SKU: {selectedUnitProduct.sku}
+                                                </p>
+                                            )}
                                         </div>
 
                                         <button
@@ -925,37 +975,37 @@ const StockInventory = () => {
                                                 setSelectedUnitProduct(null);
                                                 setUnitSearch('');
                                             }}
-                                            className="relative shrink-0 rounded-xl border border-white/20 bg-white/10 px-3.5 py-2.5 font-bold text-white transition-colors hover:bg-white/20"
+                                            className="relative shrink-0 rounded-xl border border-orange-300/40 bg-orange-500 px-3.5 py-2.5 font-bold text-white transition-colors hover:bg-orange-600"
                                         >
                                             ✕
                                         </button>
                                     </div>
                                 </div>
 
-                                <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+                                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-6">
 
                                     {/* UNIT SUMMARY */}
                                     <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
 
-                                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                                            <p className="text-xs font-medium text-slate-500">
+                                        <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 sm:p-4">
+                                            <p className="break-words text-xs font-medium text-blue-700">
                                                 Total Received
                                             </p>
-                                            <p className="mt-2 text-2xl font-bold text-slate-800">
+                                            <p className="mt-2 text-2xl font-bold text-blue-950">
                                                 {selectedUnitProduct.totalReceivedQuantity ?? 0}
                                             </p>
                                         </div>
 
-                                        <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
-                                            <p className="text-xs font-medium text-emerald-700">
+                                        <div className="rounded-xl border border-blue-100 bg-white p-3 sm:p-4">
+                                            <p className="text-xs font-medium text-blue-700">
                                                 Available
                                             </p>
-                                            <p className="mt-2 text-2xl font-bold text-emerald-700">
+                                            <p className="mt-2 text-2xl font-bold text-blue-700">
                                                 {selectedUnitProduct.availableQuantity ?? 0}
                                             </p>
                                         </div>
 
-                                        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+                                        <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 sm:p-4">
                                             <p className="text-xs font-medium text-blue-700">
                                                 Assigned
                                             </p>
@@ -964,17 +1014,17 @@ const StockInventory = () => {
                                             </p>
                                         </div>
 
-                                        <div className="rounded-xl border border-red-100 bg-red-50 p-4">
-                                            <p className="text-xs font-medium text-red-700">
+                                        <div className="rounded-xl border border-orange-100 bg-orange-50 p-3 sm:p-4">
+                                            <p className="text-xs font-medium text-orange-700">
                                                 Damaged
                                             </p>
-                                            <p className="mt-2 text-2xl font-bold text-red-700">
+                                            <p className="mt-2 text-2xl font-bold text-orange-700">
                                                 {selectedUnitProduct.damagedQuantity ?? 0}
                                             </p>
                                         </div>
 
-                                        <div className="rounded-xl border border-orange-100 bg-orange-50 p-4">
-                                            <p className="text-xs font-medium text-orange-700">
+                                        <div className="rounded-xl border border-orange-200 bg-orange-50 p-3 sm:p-4">
+                                            <p className="break-words text-xs font-medium text-orange-700">
                                                 Under Repair
                                             </p>
                                             <p className="mt-2 text-2xl font-bold text-orange-700">
@@ -984,20 +1034,18 @@ const StockInventory = () => {
                                     </div>
 
                                     {/* DEVICE LIST HEADER */}
-                                    <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                                        <div>
-                                            <h3 className="text-base font-bold text-slate-800">
+                                    <div className="mb-4 flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                                        <div className="min-w-0">
+                                            <h3 className="text-base font-bold text-blue-950">
                                                 Individual Device List
                                             </h3>
 
-                                            <p className="mt-1 text-xs text-slate-500">
+                                            <p className="mt-1 break-words text-xs text-slate-500">
                                                 Search by Unit Code, Serial Number or Status.
                                             </p>
                                         </div>
 
-                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-
-                                            {/* UNIT SEARCH */}
+                                        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
                                             <div className="relative w-full sm:w-80">
                                                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
                                                     🔍
@@ -1008,30 +1056,30 @@ const StockInventory = () => {
                                                     value={unitSearch}
                                                     onChange={(e) => setUnitSearch(e.target.value)}
                                                     placeholder="Search Unit Code / Serial Number..."
-                                                    className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-10 pr-10 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                                    className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-10 pr-10 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                                                 />
 
                                                 {unitSearch && (
                                                     <button
                                                         type="button"
                                                         onClick={() => setUnitSearch('')}
-                                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 hover:text-red-500"
+                                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 hover:text-orange-600"
                                                     >
                                                         ✕
                                                     </button>
                                                 )}
                                             </div>
 
-                                            <span className="whitespace-nowrap rounded-xl bg-blue-50 px-4 py-3 text-center text-xs font-bold text-blue-700">
+                                            <span className="whitespace-nowrap rounded-xl bg-orange-50 px-4 py-3 text-center text-xs font-bold text-orange-700">
                                                 {filteredStockUnits.length} / {stockUnits.length} Devices
                                             </span>
                                         </div>
                                     </div>
 
                                     {/* DELETE INFORMATION */}
-                                    <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-100 bg-amber-50 p-3.5">
+                                    <div className="mb-4 flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50 p-3.5">
                                         <span className="text-lg">ℹ️</span>
-                                        <p className="text-xs leading-5 text-amber-800">
+                                        <p className="break-words text-xs leading-5 text-orange-800">
                                             Only Available and unassigned devices can be deleted. Assigned, Damaged and Under Repair devices cannot be deleted from this list.
                                         </p>
                                     </div>
@@ -1045,15 +1093,15 @@ const StockInventory = () => {
                                             </p>
                                         </div>
                                     ) : unitsError ? (
-                                        <div className="rounded-xl border border-red-100 bg-red-50 p-6 text-center">
-                                            <p className="text-sm text-red-600">
+                                        <div className="rounded-xl border border-orange-200 bg-orange-50 p-6 text-center">
+                                            <p className="break-words text-sm text-orange-700">
                                                 {unitsError}
                                             </p>
 
                                             <button
                                                 type="button"
                                                 onClick={() => handleViewUnits(selectedUnitProduct)}
-                                                className="mt-4 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+                                                className="mt-4 rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
                                             >
                                                 Try Again
                                             </button>
@@ -1078,55 +1126,31 @@ const StockInventory = () => {
                                                 No Matching Devices Found
                                             </h3>
 
-                                            <p className="mt-1 text-sm text-slate-500">
+                                            <p className="mt-1 break-words text-sm text-slate-500">
                                                 No device matches "{unitSearch}".
                                             </p>
 
                                             <button
                                                 type="button"
                                                 onClick={() => setUnitSearch('')}
-                                                className="mt-4 rounded-lg bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                                                className="mt-4 rounded-lg bg-orange-50 px-4 py-2 text-xs font-semibold text-orange-700 hover:bg-orange-100"
                                             >
                                                 Clear Search
                                             </button>
                                         </div>
                                     ) : (
-                                        <div className="overflow-x-auto rounded-xl border border-slate-200">
-                                            <table className="w-full min-w-[1050px] text-left text-sm">
-
-                                                <thead className="bg-slate-50">
+                                        <div className="w-full max-w-full overflow-x-auto rounded-xl border border-slate-200">
+                                            <table className="w-full min-w-[950px] text-left text-sm">
+                                                <thead className="bg-blue-950">
                                                     <tr>
-                                                        <th className="px-4 py-4 font-bold text-slate-600">
-                                                            #
-                                                        </th>
-
-                                                        <th className="px-4 py-4 font-bold text-slate-600">
-                                                            Unit Code
-                                                        </th>
-
-                                                        <th className="px-4 py-4 font-bold text-slate-600">
-                                                            Serial Number
-                                                        </th>
-
-                                                        <th className="px-4 py-4 font-bold text-slate-600">
-                                                            Status
-                                                        </th>
-
-                                                        <th className="px-4 py-4 font-bold text-slate-600">
-                                                            Warranty
-                                                        </th>
-
-                                                        <th className="px-4 py-4 font-bold text-slate-600">
-                                                            Receiving Date
-                                                        </th>
-
-                                                        <th className="px-4 py-4 font-bold text-slate-600">
-                                                            Supplier
-                                                        </th>
-
-                                                        <th className="px-4 py-4 text-right font-bold text-slate-600">
-                                                            Action
-                                                        </th>
+                                                        <th className="whitespace-nowrap px-4 py-4 font-bold text-white">#</th>
+                                                        <th className="whitespace-nowrap px-4 py-4 font-bold text-white">Unit Code</th>
+                                                        <th className="whitespace-nowrap px-4 py-4 font-bold text-white">Serial Number</th>
+                                                        <th className="whitespace-nowrap px-4 py-4 font-bold text-white">Status</th>
+                                                        <th className="whitespace-nowrap px-4 py-4 font-bold text-white">Warranty</th>
+                                                        <th className="whitespace-nowrap px-4 py-4 font-bold text-white">Receiving Date</th>
+                                                        <th className="whitespace-nowrap px-4 py-4 font-bold text-white">Supplier</th>
+                                                        <th className="whitespace-nowrap px-4 py-4 text-right font-bold text-white">Action</th>
                                                     </tr>
                                                 </thead>
 
@@ -1137,11 +1161,11 @@ const StockInventory = () => {
                                                             !unit.asset;
 
                                                         const statusStyle = {
-                                                            Available: 'bg-emerald-50 text-emerald-700',
-                                                            Assigned: 'bg-blue-50 text-blue-700',
-                                                            Damaged: 'bg-red-50 text-red-700',
+                                                            Available: 'bg-blue-50 text-blue-700',
+                                                            Assigned: 'bg-blue-100 text-blue-800',
+                                                            Damaged: 'bg-orange-100 text-orange-700',
                                                             'Under Repair': 'bg-orange-50 text-orange-700',
-                                                            Returned: 'bg-violet-50 text-violet-700'
+                                                            Returned: 'bg-blue-50 text-blue-700'
                                                         };
 
                                                         const receivedDate =
@@ -1155,42 +1179,58 @@ const StockInventory = () => {
                                                         return (
                                                             <tr
                                                                 key={unit._id}
-                                                                className="transition-colors hover:bg-slate-50"
+                                                                className="transition-colors hover:bg-blue-50/50"
                                                             >
-                                                                <td className="px-4 py-4 text-slate-500">
+                                                                <td className="whitespace-nowrap px-4 py-4 text-slate-500">
                                                                     {index + 1}
                                                                 </td>
 
                                                                 <td className="px-4 py-4">
-                                                                    <p className="font-semibold text-slate-800">
+                                                                    <p className="break-all font-semibold text-slate-800">
                                                                         {unit.unitCode || '—'}
                                                                     </p>
                                                                 </td>
 
                                                                 <td className="px-4 py-4">
-                                                                    <p className="text-slate-600">
+                                                                    <p className="break-all text-slate-600">
                                                                         {unit.serialNumber || 'Not provided'}
                                                                     </p>
                                                                 </td>
 
                                                                 <td className="px-4 py-4">
-                                                                    <span
-                                                                        className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${
-                                                                            statusStyle[unit.status] ||
-                                                                            'bg-slate-100 text-slate-600'
-                                                                        }`}
-                                                                    >
-                                                                        {unit.status || 'Unknown'}
-                                                                    </span>
+                                                                    <div className="flex flex-row flex-wrap items-center gap-2">
+                                                                        <span
+                                                                            className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${
+                                                                                statusStyle[unit.status] ||
+                                                                                'bg-slate-100 text-slate-600'
+                                                                            }`}
+                                                                        >
+                                                                            {unit.status || 'Unknown'}
+                                                                        </span>
+
+                                                                        {/* REPAIRED BADGE */}
+                                                                        {unit.isRepaired && (
+                                                                            <span
+                                                                                title={
+                                                                                    unit.repairedAt
+                                                                                        ? `Repaired on ${new Date(unit.repairedAt).toLocaleDateString()}`
+                                                                                        : 'This device has been repaired'
+                                                                                }
+                                                                                className="inline-flex whitespace-nowrap rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700"
+                                                                            >
+                                                                                🔧 Repaired
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
                                                                 </td>
 
                                                                 <td className="px-4 py-4">
-                                                                    <span className="text-slate-600">
+                                                                    <span className="break-words text-slate-600">
                                                                         {selectedUnitProduct.warranty || 'Not specified'}
                                                                     </span>
                                                                 </td>
 
-                                                                <td className="px-4 py-4 text-slate-500">
+                                                                <td className="whitespace-nowrap px-4 py-4 text-slate-500">
                                                                     {receivedDate &&
                                                                     !Number.isNaN(new Date(receivedDate).getTime())
                                                                         ? new Date(receivedDate).toLocaleDateString()
@@ -1198,12 +1238,12 @@ const StockInventory = () => {
                                                                 </td>
 
                                                                 <td className="px-4 py-4">
-                                                                    <span className="text-slate-600">
+                                                                    <span className="break-words text-slate-600">
                                                                         {supplier || '—'}
                                                                     </span>
                                                                 </td>
 
-                                                                <td className="px-4 py-4 text-right">
+                                                                <td className="whitespace-nowrap px-4 py-4 text-right">
                                                                     <button
                                                                         type="button"
                                                                         disabled={
@@ -1216,7 +1256,7 @@ const StockInventory = () => {
                                                                                 ? 'Delete this device'
                                                                                 : 'Only available and unassigned devices can be deleted'
                                                                         }
-                                                                        className="rounded-lg bg-red-50 px-3.5 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-red-50"
+                                                                        className="rounded-lg bg-orange-50 px-3.5 py-2 text-xs font-semibold text-orange-700 transition-colors hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-orange-50"
                                                                     >
                                                                         {deletingUnitId === unit._id
                                                                             ? 'Deleting...'
@@ -1233,7 +1273,7 @@ const StockInventory = () => {
 
                                     {/* MODAL FOOTER */}
                                     <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                                        <p className="text-xs text-slate-400">
+                                        <p className="break-words text-xs text-slate-400">
                                             Showing {filteredStockUnits.length} of {stockUnits.length} devices
                                         </p>
 
@@ -1243,7 +1283,7 @@ const StockInventory = () => {
                                                 setSelectedUnitProduct(null);
                                                 setUnitSearch('');
                                             }}
-                                            className="rounded-xl border border-slate-200 px-6 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                                            className="w-full rounded-xl bg-blue-700 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-800 sm:w-auto"
                                         >
                                             Close
                                         </button>
@@ -1256,7 +1296,7 @@ const StockInventory = () => {
                     {/* STOCK STATISTICS */}
                     <section className="mb-7">
                         <div className="mb-4">
-                            <h2 className="text-base font-bold text-slate-800">
+                            <h2 className="text-base font-bold text-blue-950">
                                 Stock Overview
                             </h2>
                             <p className="mt-1 text-xs text-slate-500">
@@ -1268,7 +1308,7 @@ const StockInventory = () => {
                             {statCards.map((card, index) => (
                                 <div
                                     key={index}
-                                    className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
+                                    className="group rounded-2xl border border-blue-100 border-l-4 border-l-orange-400 bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
                                 >
                                     <div className="flex items-center justify-between gap-3">
                                         <div>
@@ -1276,7 +1316,7 @@ const StockInventory = () => {
                                                 {card.title}
                                             </p>
 
-                                            <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-800">
+                                            <h2 className="mt-2 text-2xl font-bold tracking-tight text-blue-950">
                                                 {card.value ?? 0}
                                             </h2>
                                         </div>
@@ -1292,10 +1332,14 @@ const StockInventory = () => {
 
                     {/* ADD / UPDATE FORM */}
                     {showForm && (
-                        <section className="mb-7 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <section className="mb-7 overflow-hidden rounded-2xl border border-blue-100 border-t-4 border-t-orange-500 bg-white shadow-sm">
                             <div className="border-b border-slate-100 px-5 py-5 sm:px-6">
-                                <h2 className="text-lg font-bold text-slate-800">
-                                    {editingId ? 'Update Stock Product' : 'Add New Stock Product'}
+                                <h2 className="text-lg font-bold text-blue-950">
+                                    {receivingStockId
+                                        ? 'Receive Stock'
+                                        : editingId
+                                            ? 'Update Stock Product'
+                                            : 'Add New Stock Product'}
                                 </h2>
 
                                 <p className="mt-1 text-sm text-slate-500">
@@ -1328,13 +1372,13 @@ const StockInventory = () => {
                                                 value={formData[field.name]}
                                                 onChange={handleInputChange}
                                                 placeholder={field.placeholder}
-                                                min={field.type === 'number' ? 0 : undefined}
+                                                min={field.type === 'number' ? (receivingStockId && field.name === 'totalReceivedQuantity' ? 1 : 0) : undefined}
                                                 required={
                                                     field.name === 'name' ||
                                                     field.name === 'category' ||
                                                     field.name === 'totalReceivedQuantity'
                                                 }
-                                                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                                             />
                                         </div>
                                     ))}
@@ -1348,7 +1392,7 @@ const StockInventory = () => {
                                             name="unit"
                                             value={formData.unit}
                                             onChange={handleInputChange}
-                                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                                         >
                                             {['Piece', 'Box', 'Pack', 'Set', 'Meter', 'Roll'].map(unit => (
                                                 <option key={unit} value={unit}>
@@ -1360,9 +1404,9 @@ const StockInventory = () => {
 
                                     {/* SERIAL NUMBER INPUTS */}
                                     {getAdditionalQuantity() > 0 && (
-                                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 md:col-span-2 lg:col-span-3">
+                                        <div className="rounded-xl border border-orange-100 bg-orange-50/50 p-4 md:col-span-2 lg:col-span-3">
                                             <div className="mb-4">
-                                                <label className="block text-sm font-semibold text-slate-700">
+                                                <label className="block text-sm font-semibold text-blue-950">
                                                     Individual Serial Numbers (Optional)
                                                 </label>
 
@@ -1391,7 +1435,7 @@ const StockInventory = () => {
                                                                 )
                                                             }
                                                             placeholder={`Serial number ${index + 1}`}
-                                                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                                                         />
                                                     </div>
                                                 ))}
@@ -1410,7 +1454,7 @@ const StockInventory = () => {
                                             onChange={handleInputChange}
                                             rows="3"
                                             placeholder="Write product details..."
-                                            className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                            className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                                         />
                                     </div>
                                 </div>
@@ -1419,13 +1463,15 @@ const StockInventory = () => {
                                     <button
                                         type="submit"
                                         disabled={saving}
-                                        className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                        className="rounded-xl bg-blue-700 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                         {saving
                                             ? 'Saving...'
-                                            : editingId
-                                                ? 'Update Product'
-                                                : 'Save Product'
+                                            : receivingStockId
+                                                ? 'Receive Stock'
+                                                : editingId
+                                                    ? 'Update Product'
+                                                    : 'Save Product'
                                         }
                                     </button>
 
@@ -1435,7 +1481,7 @@ const StockInventory = () => {
                                             resetForm();
                                             setShowForm(false);
                                         }}
-                                        className="rounded-xl border border-slate-200 px-6 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                                        className="rounded-xl border border-orange-200 px-6 py-3 text-sm font-semibold text-orange-700 transition-colors hover:bg-orange-50"
                                     >
                                         Cancel
                                     </button>
@@ -1445,15 +1491,15 @@ const StockInventory = () => {
                     )}
 
                     {/* PRODUCTS AND SKU LIST */}
-                    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_230px]">
+                    <div className="grid min-w-0 grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_230px]">
 
                         {/* PRODUCT LIST */}
-                        <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <section className="min-w-0 overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-sm">
 
-                            <div className="border-b border-slate-100 p-5 sm:p-6">
-                                <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                                    <div>
-                                        <h2 className="text-lg font-bold text-slate-800">
+                            <div className="border-b border-orange-100 p-5 sm:p-6">
+                                <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                                    <div className="min-w-0">
+                                        <h2 className="text-lg font-bold text-blue-950">
                                             All Stock Products
                                         </h2>
 
@@ -1467,17 +1513,17 @@ const StockInventory = () => {
                                         value={search}
                                         onChange={(e) => setSearch(e.target.value)}
                                         placeholder="Search product, category, SKU..."
-                                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 xl:max-w-sm"
+                                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-100 xl:max-w-sm"
                                     />
                                 </div>
 
                                 {selectedSku && (
-                                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
-                                        <div>
-                                            <p className="text-xs font-medium text-blue-600">
+                                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-orange-100 bg-orange-50 px-4 py-3">
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-medium text-orange-700">
                                                 Filtered by SKU
                                             </p>
-                                            <p className="mt-0.5 text-sm font-bold text-blue-800">
+                                            <p className="mt-0.5 break-all text-sm font-bold text-blue-900">
                                                 {selectedSku}
                                             </p>
                                         </div>
@@ -1485,7 +1531,7 @@ const StockInventory = () => {
                                         <button
                                             type="button"
                                             onClick={() => setSelectedSku('')}
-                                            className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+                                            className="rounded-lg border border-orange-200 bg-white px-3 py-2 text-xs font-semibold text-orange-700 transition-colors hover:bg-orange-100"
                                         >
                                             Show All Products
                                         </button>
@@ -1493,20 +1539,20 @@ const StockInventory = () => {
                                 )}
                             </div>
 
-                            <div className="p-4 sm:p-5">
+                            <div className="min-w-0 p-3 sm:p-5">
                                 {loading ? (
                                     <div className="p-12 text-center text-sm text-slate-500">
                                         Loading stock inventory...
                                     </div>
                                 ) : error ? (
                                     <div className="p-8 text-center">
-                                        <p className="mb-4 text-sm text-red-600">
+                                        <p className="mb-4 break-words text-sm text-orange-700">
                                             {error}
                                         </p>
 
                                         <button
                                             onClick={fetchStockData}
-                                            className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+                                            className="rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
                                         >
                                             Try Again
                                         </button>
@@ -1524,7 +1570,7 @@ const StockInventory = () => {
                                         </p>
                                     </div>
                                 ) : (
-                                    <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                                    <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-2">
                                         {filteredItems.map(item => {
                                             const isLowStock =
                                                 item.availableQuantity <= item.minimumStockLevel;
@@ -1534,37 +1580,37 @@ const StockInventory = () => {
                                             return (
                                                 <article
                                                     key={item._id}
-                                                    className="overflow-hidden rounded-2xl border border-slate-200 bg-white transition-shadow hover:shadow-md"
+                                                    className="flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-blue-100 bg-white transition-shadow hover:shadow-md"
                                                 >
                                                     {/* PRODUCT HEADER */}
-                                                    <div className="border-b border-slate-100 bg-slate-50 p-5">
-                                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                                            <div className="min-w-0">
-                                                                <div className="flex flex-wrap items-center gap-2">
-                                                                    <h3 className="text-lg font-bold text-slate-800">
+                                                    <div className="border-b border-orange-100 bg-blue-50/60 p-4 sm:p-5">
+                                                        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                                                    <h3 className="min-w-0 break-words text-lg font-bold text-blue-950">
                                                                         {item.name}
                                                                     </h3>
 
-                                                                    <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
+                                                                    <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold ${
                                                                         isLowStock
-                                                                            ? 'bg-red-50 text-red-600'
-                                                                            : 'bg-emerald-50 text-emerald-700'
+                                                                            ? 'bg-orange-100 text-orange-700'
+                                                                            : 'bg-blue-100 text-blue-700'
                                                                     }`}>
                                                                         {isLowStock ? 'Low Stock' : 'In Stock'}
                                                                     </span>
                                                                 </div>
 
-                                                                <p className="mt-2 text-sm text-slate-500">
+                                                                <p className="mt-2 break-words text-sm leading-6 text-slate-600">
                                                                     {[item.brand, item.model].filter(Boolean).join(' / ') || 'No brand or model'}
                                                                 </p>
                                                             </div>
 
-                                                            <div className="shrink-0 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5 sm:min-w-[115px] sm:text-center">
-                                                                <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600">
+                                                            <div className="w-full min-w-0 rounded-xl border border-blue-200 bg-white px-3 py-2.5 sm:w-auto sm:shrink-0 sm:min-w-[115px] sm:text-center">
+                                                                <p className="text-[10px] font-bold uppercase tracking-wider text-orange-600">
                                                                     SKU / Code
                                                                 </p>
 
-                                                                <p className="mt-1 break-all text-sm font-bold text-blue-800">
+                                                                <p className="mt-1 break-all text-sm font-bold text-blue-900">
                                                                     {item.sku || 'Not set'}
                                                                 </p>
                                                             </div>
@@ -1572,45 +1618,45 @@ const StockInventory = () => {
                                                     </div>
 
                                                     {/* PRODUCT DETAILS */}
-                                                    <div className="p-5">
-                                                        <div className="mb-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
-                                                            <div>
+                                                    <div className="flex min-w-0 flex-1 flex-col p-4 sm:p-5">
+                                                        <div className="mb-5 grid min-w-0 grid-cols-2 gap-4 sm:grid-cols-3">
+                                                            <div className="min-w-0">
                                                                 <p className="text-xs font-medium text-slate-400">
                                                                     Category
                                                                 </p>
-                                                                <p className="mt-1 text-sm font-semibold text-slate-700">
+                                                                <p className="mt-1 break-words text-sm font-semibold text-slate-700">
                                                                     {item.category || '—'}
                                                                 </p>
                                                             </div>
 
-                                                            <div>
+                                                            <div className="min-w-0">
                                                                 <p className="text-xs font-medium text-slate-400">
                                                                     Unit
                                                                 </p>
-                                                                <p className="mt-1 text-sm font-semibold text-slate-700">
+                                                                <p className="mt-1 break-words text-sm font-semibold text-slate-700">
                                                                     {item.unit || 'Piece'}
                                                                 </p>
                                                             </div>
 
-                                                            <div>
+                                                            <div className="min-w-0">
                                                                 <p className="text-xs font-medium text-slate-400">
                                                                     Minimum Stock
                                                                 </p>
-                                                                <p className="mt-1 text-sm font-semibold text-slate-700">
+                                                                <p className="mt-1 break-words text-sm font-semibold text-slate-700">
                                                                     {item.minimumStockLevel ?? 0}
                                                                 </p>
                                                             </div>
 
-                                                            <div>
+                                                            <div className="min-w-0">
                                                                 <p className="text-xs font-medium text-slate-400">
                                                                     Warranty
                                                                 </p>
-                                                                <p className="mt-1 text-sm font-semibold text-slate-700">
+                                                                <p className="mt-1 break-words text-sm font-semibold text-slate-700">
                                                                     {item.warranty || 'Not specified'}
                                                                 </p>
                                                             </div>
 
-                                                            <div className="col-span-2">
+                                                            <div className="col-span-2 min-w-0">
                                                                 <p className="text-xs font-medium text-slate-400">
                                                                     Supplier Name
                                                                 </p>
@@ -1622,7 +1668,7 @@ const StockInventory = () => {
 
                                                         {/* QUANTITY OVERVIEW */}
                                                         <div className="border-t border-slate-100 pt-4">
-                                                            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">
+                                                            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-blue-700">
                                                                 Quantity Overview
                                                             </p>
 
@@ -1630,9 +1676,9 @@ const StockInventory = () => {
                                                                 {details.map(detail => (
                                                                     <div
                                                                         key={detail.label}
-                                                                        className={`rounded-xl p-3 ${detail.background}`}
+                                                                        className={`min-w-0 rounded-xl p-3 ${detail.background}`}
                                                                     >
-                                                                        <p className="text-xs font-medium text-slate-500">
+                                                                        <p className="break-words text-xs font-medium text-slate-500">
                                                                             {detail.label}
                                                                         </p>
 
@@ -1645,26 +1691,24 @@ const StockInventory = () => {
                                                         </div>
 
                                                         {/* DESCRIPTION */}
-                                                        {item.description && (
-                                                            <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3">
-                                                                <p className="text-xs font-semibold text-slate-500">
-                                                                    Description
-                                                                </p>
+                                                        <div className="mt-4 min-h-[100px] max-h-40 shrink-0 overflow-y-auto rounded-xl border border-orange-100 bg-orange-50/40 p-3">
+                                                            <p className="text-xs font-semibold text-blue-800">
+                                                                Description
+                                                            </p>
 
-                                                                <p className="mt-1 text-sm leading-6 text-slate-600">
-                                                                    {item.description}
-                                                                </p>
-                                                            </div>
-                                                        )}
+                                                            <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-600">
+                                                                {item.description || 'No description available.'}
+                                                            </p>
+                                                        </div>
 
                                                         {/* ACTION BUTTONS */}
-                                                        <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+                                                        <div className="mt-auto flex flex-wrap gap-2 border-t border-slate-100 pt-4">
 
                                                             {/* VIEW INDIVIDUAL DEVICES */}
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleViewUnits(item)}
-                                                                className="rounded-lg bg-violet-50 px-3.5 py-2.5 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-100"
+                                                                className="rounded-lg bg-orange-50 px-3.5 py-2.5 text-xs font-semibold text-orange-700 transition-colors hover:bg-orange-100"
                                                             >
                                                                 View Units ({item.totalReceivedQuantity ?? 0})
                                                             </button>
@@ -1673,6 +1717,7 @@ const StockInventory = () => {
                                                                 type="button"
                                                                 onClick={() => {
                                                                     setEditingId(null);
+                                                                    setReceivingStockId(item._id);
                                                                     setSerialNumbers([]);
 
                                                                     setFormData({
@@ -1696,7 +1741,7 @@ const StockInventory = () => {
                                                                         behavior: 'smooth'
                                                                     });
                                                                 }}
-                                                                className="rounded-lg bg-emerald-600 px-3.5 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
+                                                                className="rounded-lg bg-blue-700 px-3.5 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-blue-800"
                                                             >
                                                                 + Receive Stock
                                                             </button>
@@ -1717,7 +1762,7 @@ const StockInventory = () => {
 
                                                             <button
                                                                 onClick={() => handleDeleteStock(item._id)}
-                                                                className="rounded-lg bg-red-50 px-3.5 py-2.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100"
+                                                                className="rounded-lg bg-orange-50 px-3.5 py-2.5 text-xs font-semibold text-orange-700 transition-colors hover:bg-orange-100"
                                                             >
                                                                 Delete
                                                             </button>
@@ -1732,11 +1777,11 @@ const StockInventory = () => {
                         </section>
 
                         {/* SKU LIST */}
-                        <aside className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:sticky lg:top-24">
-                            <div className="border-b border-slate-100 p-5">
+                        <aside className="min-w-0 overflow-hidden rounded-2xl border border-blue-100 border-t-4 border-t-orange-500 bg-white shadow-sm lg:sticky lg:top-24">
+                            <div className="border-b border-orange-100 p-5">
                                 <div className="flex items-center justify-between gap-2">
-                                    <div>
-                                        <h2 className="text-base font-bold text-slate-800">
+                                    <div className="min-w-0">
+                                        <h2 className="text-base font-bold text-blue-950">
                                             SKU List
                                         </h2>
 
@@ -1745,7 +1790,7 @@ const StockInventory = () => {
                                         </p>
                                     </div>
 
-                                    <span className="flex h-8 min-w-8 items-center justify-center rounded-lg bg-slate-100 px-2 text-xs font-bold text-slate-600">
+                                    <span className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg bg-orange-50 px-2 text-xs font-bold text-orange-700">
                                         {uniqueSkus.length}
                                     </span>
                                 </div>
@@ -1770,8 +1815,8 @@ const StockInventory = () => {
                                                 title={sku}
                                                 className={`w-full break-all rounded-xl border px-3 py-3 text-left text-sm font-semibold transition-colors ${
                                                     selectedSku === sku
-                                                        ? 'border-blue-600 bg-blue-600 text-white'
-                                                        : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700'
+                                                        ? 'border-blue-700 bg-blue-700 text-white'
+                                                        : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700'
                                                 }`}
                                             >
                                                 {sku}
@@ -1784,7 +1829,7 @@ const StockInventory = () => {
                                     <button
                                         type="button"
                                         onClick={() => setSelectedSku('')}
-                                        className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                                        className="mt-4 w-full rounded-xl border border-orange-200 px-3 py-2.5 text-xs font-semibold text-orange-700 transition-colors hover:bg-orange-50"
                                     >
                                         Clear SKU Filter
                                     </button>

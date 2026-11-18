@@ -50,6 +50,19 @@ const stockUnitSchema = new mongoose.Schema(
             index: true
         },
 
+        // REPAIRED DEVICE TRACKING
+        isRepaired: {
+            type: Boolean,
+            default: false,
+            index: true
+        },
+
+        // LAST SUCCESSFUL REPAIR DATE
+        repairedAt: {
+            type: Date,
+            default: null
+        },
+
         // LINK TO ASSET AFTER ASSIGNMENT
         asset: {
             type: mongoose.Schema.Types.ObjectId,

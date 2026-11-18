@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import StockItem from '../models/StockItem.js';
 import StockUnit from '../models/StockUnit.js';
 import StockReceipt from '../models/StockReceipt.js';
+import Counter from '../models/Counter.js';
 
 // STOCK RECEIVING CONTROLLER - Search: STOCK RECEIVING CONTROLLER
 
@@ -176,19 +177,38 @@ export const receiveStock = async (req, res) => {
             createdReceipt = receipt[0];
 
             // PREPARE INDIVIDUAL DEVICE RECORDS
-            const units = cleanedSerialNumbers.map(serial => ({
-                stockItem: stockItem._id,
+            const units = [];
 
-                unitCode: `UMC-UNIT-${randomUUID()}`,
+            for (let index = 0; index < receiveQuantity; index++) {
 
-                ...(serial ? { serialNumber: serial } : {}),
+                // GENERATE SEQUENTIAL STOCK UNIT CODE
+                const counter = await Counter.findOneAndUpdate(
+                    { _id: 'stockUnit' },
+                    { $inc: { sequence: 1 } },
+                    {
+                        new: true,
+                        upsert: true,
+                        session,
+                        setDefaultsOnInsert: true
+                    }
+                );
 
-                receipt: createdReceipt._id,
+                units.push({
+                    stockItem: stockItem._id,
 
-                status: 'Available',
+                    unitCode: `UMC-UNIT-${String(counter.sequence).padStart(6, '0')}`,
 
-                description: ''
-            }));
+                    ...(cleanedSerialNumbers[index]
+                        ? { serialNumber: cleanedSerialNumbers[index] }
+                        : {}),
+
+                    receipt: createdReceipt._id,
+
+                    status: 'Available',
+
+                    description: ''
+                });
+            }
 
             // CREATE DEVICE RECORDS
             createdUnits = await StockUnit.insertMany(

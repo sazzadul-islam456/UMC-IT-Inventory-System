@@ -24,6 +24,9 @@ import supplierRoutes from './routestow/supplierRoutes.js';
 // SUPPLIER RETURN ROUTES IMPORT
 import supplierReturnRoutes from './routestow/supplierReturnRoutes.js';
 
+// DASHBOARD AUDIT ROUTES IMPORT
+import dashboardAuditRoutes from './routestow/dashboardAuditRoutes.js';
+
 const app = express();
 
 // MIDDLEWARE
@@ -81,6 +84,9 @@ app.use('/api/supplier-returns', supplierReturnRoutes);
 // ASSIGNMENT ROUTES MOUNT
 app.use('/api/assignments', assignmentRoutes);
 
+// DASHBOARD AUDIT ROUTES MOUNT
+app.use('/api/dashboard-audit', dashboardAuditRoutes);
+
 // REGISTERED ROUTES
 console.log(
     'REGISTERED ROUTES:',
@@ -109,6 +115,7 @@ const startServer = async () => {
         console.log('SUPPLIER ROUTE REGISTERED');
         console.log('SUPPLIER RETURN ROUTE REGISTERED');
         console.log('ASSIGNMENT ROUTE REGISTERED');
+        console.log('DASHBOARD AUDIT ROUTE REGISTERED');
 
         app.listen(PORT, () => {
             console.log(`Server is running on port ${PORT}`);

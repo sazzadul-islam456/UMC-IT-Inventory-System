@@ -16,7 +16,7 @@ const assignmentSchema = new mongoose.Schema(
         // ASSIGNMENT TYPE
         assignmentType: {
             type: String,
-            enum: ['Department', 'Individual'],
+            enum: ['Department', 'Individual', 'Room'],
             required: true
         },
 
@@ -70,6 +70,16 @@ const assignmentSchema = new mongoose.Schema(
                 ref: 'Asset'
             }
         ],
+
+        // ROOM REFERENCE
+        room: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Room',
+            required: function () {
+                return this.assignmentType === 'Room';
+            },
+            default: null
+        },
 
         // DEPARTMENT REFERENCE
         department: {

@@ -1,3 +1,4 @@
+
 import Room from '../models/Room.js';
 import Department from '../models/Department.js';
 
@@ -7,6 +8,7 @@ export const createRoom = async (req, res) => {
         const {
             name,
             roomNumber,
+            floorLevel,
             department,
             inCharge,
             description
@@ -29,6 +31,7 @@ export const createRoom = async (req, res) => {
         const room = await Room.create({
             name,
             roomNumber,
+            floorLevel,
             department,
             inCharge,
             description
@@ -74,6 +77,7 @@ export const updateRoom = async (req, res) => {
         const {
             name,
             roomNumber,
+            floorLevel,
             department,
             inCharge,
             description,
@@ -95,6 +99,7 @@ export const updateRoom = async (req, res) => {
             {
                 name,
                 roomNumber,
+                floorLevel,
                 department,
                 inCharge,
                 description,

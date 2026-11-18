@@ -1,6 +1,5 @@
 
 import mongoose from 'mongoose';
-import { randomUUID } from 'node:crypto';
 
 import Asset from '../models/Asset.js';
 import StockItem from '../models/StockItem.js';
@@ -66,7 +65,7 @@ export const assignAssets = async (req, res) => {
         session = await mongoose.startSession();
 
         let updatedStock;
-        let createdAssets;
+        let assignedAssets = [];
 
         await session.withTransaction(
             async () => {
@@ -119,11 +118,11 @@ export const assignAssets = async (req, res) => {
                     throw error;
                 }
 
-                // FIND INDIVIDUAL AVAILABLE STOCK UNITS
+                // FIND AVAILABLE STOCK UNITS
+                // EXISTING ASSET REFERENCE IS ALLOWED FOR RE-ASSIGNMENT
                 const availableUnits = await StockUnit.find({
                     stockItem: stockItemId,
-                    status: 'Available',
-                    asset: null
+                    status: 'Available'
                 })
                     .sort({ createdAt: 1 })
                     .limit(assignQuantity)
@@ -137,31 +136,6 @@ export const assignAssets = async (req, res) => {
                     error.statusCode = 400;
                     throw error;
                 }
-
-                // PREPARE INDIVIDUAL ASSETS
-                const assets = availableUnits.map(unit => ({
-                    stockItem: stockItem._id,
-
-                    // USE STOCK UNIT CODE AS ASSET ID
-                    assetId: unit.unitCode,
-
-                    // COPY MANUFACTURER SERIAL NUMBER
-                    ...(unit.serialNumber
-                        ? { serialNumber: unit.serialNumber }
-                        : {}),
-
-                    name: stockItem.name,
-                    brand: stockItem.brand || '',
-                    model: stockItem.model || '',
-                    sku: stockItem.sku || '',
-
-                    department: department._id,
-                    room: room._id,
-
-                    status: 'Assigned',
-                    assignedDate: new Date(),
-                    description: description.trim()
-                }));
 
                 // ATOMIC STOCK QUANTITY UPDATE
                 updatedStock = await StockItem.findOneAndUpdate(
@@ -191,44 +165,120 @@ export const assignAssets = async (req, res) => {
                     throw error;
                 }
 
-                // CREATE ASSETS
-                createdAssets = await Asset.insertMany(
-                    assets,
-                    {
-                        ordered: true,
-                        session
-                    }
-                );
+                // PROCESS EACH STOCK UNIT
+                assignedAssets = [];
 
-                // UPDATE INDIVIDUAL STOCK UNIT STATUS
-                const unitUpdates = availableUnits.map((unit, index) => ({
-                    updateOne: {
-                        filter: {
+                for (const unit of availableUnits) {
+
+                    // FIND EXISTING ASSET USING STOCK UNIT REFERENCE
+                    // FALLBACK TO STOCK UNIT ASSET REFERENCE FOR LEGACY RECORDS
+                    const assetConditions = [
+                        { stockUnit: unit._id }
+                    ];
+
+                    if (unit.asset) {
+                        assetConditions.push({ _id: unit.asset });
+                    }
+
+                    let asset = await Asset.findOne({
+                        $or: assetConditions
+                    }).session(session);
+
+                    if (asset) {
+
+                        // VERIFY EXISTING ASSET BELONGS TO THIS STOCK ITEM
+                        if (
+                            asset.stockItem.toString() !== stockItem._id.toString()
+                        ) {
+                            const error = new Error(
+                                `Stock unit ${unit.unitCode} is linked to an asset from another stock item`
+                            );
+                            error.statusCode = 409;
+                            throw error;
+                        }
+
+                        // EXISTING ASSET MUST BE AVAILABLE
+                        if (asset.status !== 'Available') {
+                            const error = new Error(
+                                `Existing asset ${asset.assetId} is not available for assignment`
+                            );
+                            error.statusCode = 409;
+                            throw error;
+                        }
+
+                        // REUSE EXISTING ASSET
+                        asset.stockUnit = unit._id;
+                        asset.department = department._id;
+                        asset.room = room._id;
+                        asset.status = 'Assigned';
+                        asset.assignedDate = new Date();
+                        asset.description = description.trim();
+
+                        await asset.save({ session });
+
+                    } else {
+
+                        // CREATE NEW ASSET ONLY WHEN NO ASSET EXISTS
+                        const assetData = {
+                            stockItem: stockItem._id,
+                            stockUnit: unit._id,
+
+                            // USE STOCK UNIT CODE AS ASSET ID
+                            assetId: unit.unitCode,
+
+                            // COPY MANUFACTURER SERIAL NUMBER
+                            ...(unit.serialNumber
+                                ? { serialNumber: unit.serialNumber }
+                                : {}),
+
+                            name: stockItem.name,
+                            brand: stockItem.brand || '',
+                            model: stockItem.model || '',
+                            sku: stockItem.sku || '',
+
+                            department: department._id,
+                            room: room._id,
+
+                            status: 'Assigned',
+                            assignedDate: new Date(),
+                            description: description.trim()
+                        };
+
+                        const createdAsset = await Asset.create(
+                            [assetData],
+                            { session }
+                        );
+
+                        asset = createdAsset[0];
+                    }
+
+                    // UPDATE STOCK UNIT REFERENCE AND STATUS
+                    const updatedUnit = await StockUnit.findOneAndUpdate(
+                        {
                             _id: unit._id,
-                            status: 'Available',
-                            asset: null
+                            status: 'Available'
                         },
-                        update: {
+                        {
                             $set: {
                                 status: 'Assigned',
-                                asset: createdAssets[index]._id
+                                asset: asset._id
                             }
+                        },
+                        {
+                            new: true,
+                            session
                         }
-                    }
-                }));
-
-                const unitUpdateResult = await StockUnit.bulkWrite(
-                    unitUpdates,
-                    { session }
-                );
-
-                // VERIFY ALL STOCK UNITS WERE UPDATED
-                if (unitUpdateResult.matchedCount !== assignQuantity) {
-                    const error = new Error(
-                        'Some stock units could not be updated. Please try again.'
                     );
-                    error.statusCode = 409;
-                    throw error;
+
+                    if (!updatedUnit) {
+                        const error = new Error(
+                            `Stock unit ${unit.unitCode} could not be updated`
+                        );
+                        error.statusCode = 409;
+                        throw error;
+                    }
+
+                    assignedAssets.push(asset);
                 }
             },
             {
@@ -244,7 +294,7 @@ export const assignAssets = async (req, res) => {
             message: `${assignQuantity} asset(s) assigned successfully`,
             assignedQuantity: assignQuantity,
             stock: updatedStock,
-            assets: createdAssets
+            assets: assignedAssets
         });
 
     } catch (error) {
@@ -291,6 +341,7 @@ export const getAllAssets = async (req, res) => {
     try {
         const assets = await Asset.find()
             .populate('stockItem', 'name category brand model sku')
+            .populate('stockUnit', 'unitCode serialNumber status')
             .populate('department', 'name')
             .populate('room', 'name roomNumber')
             .sort({ createdAt: -1 });

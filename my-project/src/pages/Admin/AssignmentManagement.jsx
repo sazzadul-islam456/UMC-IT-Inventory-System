@@ -1,11 +1,12 @@
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import AdminSidebar from '../../components/AdminSidebar.jsx';
 
 const ASSIGNMENT_API_URL = 'http://localhost:3001/api/assignments';
 const STOCK_API_URL = 'http://localhost:3001/api/stock';
 const DEPARTMENT_API_URL = 'http://localhost:3001/api/departments';
+const ROOM_API_URL = 'http://localhost:3001/api/rooms';
 
 // GET AUTH HEADERS
 const getHeaders = () => {
@@ -70,6 +71,7 @@ const AssignmentManagement = () => {
     // DATA STATES
     const [stockItems, setStockItems] = useState([]);
     const [departments, setDepartments] = useState([]);
+    const [rooms, setRooms] = useState([]);
     const [assignments, setAssignments] = useState([]);
 
     // LOADING STATES
@@ -86,6 +88,8 @@ const AssignmentManagement = () => {
         assignmentType: 'Department',
         stockItemId: '',
         departmentId: '',
+        floorLevel: '',
+        roomId: '',
         assignedDate: new Date().toISOString().split('T')[0],
         receiver: {
             name: '',
@@ -117,6 +121,7 @@ const AssignmentManagement = () => {
 
     // PRINT
     const [printAssignment, setPrintAssignment] = useState(null);
+    const originalDocumentTitle = useRef('');
 
     // SELECTED PRODUCT
     const selectedProduct = stockItems.find(
@@ -125,6 +130,31 @@ const AssignmentManagement = () => {
 
     const availableQuantity = Number(
         selectedProduct?.availableQuantity || 0
+    );
+
+    // SELECTED DEPARTMENT ROOMS
+    const departmentRooms = rooms.filter(room => {
+        const roomDepartmentId =
+            room.department?._id || room.department;
+
+        return roomDepartmentId === formData.departmentId;
+    });
+
+    // AVAILABLE FLOOR LEVELS
+    const availableFloorLevels = [
+        ...new Set(
+            departmentRooms
+                .map(room => room.floorLevel?.trim())
+                .filter(Boolean)
+        )
+    ].sort((a, b) => a.localeCompare(b, undefined, {
+        numeric: true,
+        sensitivity: 'base'
+    }));
+
+    // ROOMS FILTERED BY FLOOR LEVEL
+    const availableRooms = departmentRooms.filter(
+        room => room.floorLevel?.trim() === formData.floorLevel
     );
 
     // LOAD STOCK
@@ -165,6 +195,25 @@ const AssignmentManagement = () => {
         setDepartments(items.filter(item => item.isActive !== false));
     };
 
+    // LOAD ROOMS
+    const fetchRooms = async () => {
+        const response = await fetch(ROOM_API_URL, {
+            headers: getHeaders()
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to load rooms');
+        }
+
+        const items = Array.isArray(data)
+            ? data
+            : data.rooms || [];
+
+        setRooms(items.filter(item => item.isActive !== false));
+    };
+
     // LOAD ASSIGNMENTS
     const fetchAssignments = async () => {
         const response = await fetch(ASSIGNMENT_API_URL, {
@@ -189,6 +238,7 @@ const AssignmentManagement = () => {
             await Promise.all([
                 fetchStockItems(),
                 fetchDepartments(),
+                fetchRooms(),
                 fetchAssignments()
             ]);
         } catch (err) {
@@ -208,7 +258,22 @@ const AssignmentManagement = () => {
 
         setFormData(prev => ({
             ...prev,
-            [name]: value
+            [name]: value,
+            ...(name === 'departmentId'
+                ? {
+                    floorLevel: '',
+                    roomId: ''
+                }
+                : {})
+        }));
+    };
+
+    // FLOOR LEVEL CHANGE
+    const handleFloorLevelChange = (e) => {
+        setFormData(prev => ({
+            ...prev,
+            floorLevel: e.target.value,
+            roomId: ''
         }));
     };
 
@@ -230,6 +295,8 @@ const AssignmentManagement = () => {
         setFormData(prev => ({
             ...prev,
             assignmentType: type,
+            floorLevel: '',
+            roomId: '',
             receiver: {
                 name: '',
                 employeeId: '',
@@ -312,6 +379,8 @@ const AssignmentManagement = () => {
             assignmentType: 'Department',
             stockItemId: '',
             departmentId: '',
+            floorLevel: '',
+            roomId: '',
             assignedDate: new Date().toISOString().split('T')[0],
             receiver: {
                 name: '',
@@ -343,12 +412,19 @@ const AssignmentManagement = () => {
             return;
         }
 
+        if (
+            formData.assignmentType === 'Room' &&
+            (!formData.floorLevel || !formData.roomId)
+        ) {
+            setError('Please select floor level and room number.');
+            return;
+        }
+
         if (!formData.receiver.name.trim()) {
             setError('Receiver name is required.');
             return;
         }
 
-        // VALIDATE SELECTED DEVICES
         if (selectedUnitIds.length < 1) {
             setError('Please select at least one device with its serial number.');
             return;
@@ -371,6 +447,9 @@ const AssignmentManagement = () => {
                     assignmentType: formData.assignmentType,
                     stockItemId: formData.stockItemId,
                     departmentId: formData.departmentId,
+                    roomId: formData.assignmentType === 'Room'
+                        ? formData.roomId
+                        : null,
                     stockUnitIds: selectedUnitIds,
                     assignedDate: formData.assignedDate,
                     receiver: {
@@ -400,7 +479,7 @@ const AssignmentManagement = () => {
                 fetchAssignments()
             ]);
 
-            setActiveTab('History');
+            setActiveTab('Assignment History');
 
         } catch (err) {
             setError(err.message);
@@ -425,6 +504,10 @@ const AssignmentManagement = () => {
         item => item.assignmentType === 'Individual'
     ).length;
 
+    const roomAssignments = assignments.filter(
+        item => item.assignmentType === 'Room'
+    ).length;
+
     // FILTER ASSIGNMENT HISTORY
     const filteredAssignments = useMemo(() => {
         return assignments.filter(item => {
@@ -435,7 +518,10 @@ const AssignmentManagement = () => {
                 (item.receiver?.name || '').toLowerCase().includes(search) ||
                 (item.receiver?.employeeId || '').toLowerCase().includes(search) ||
                 (item.productDetails?.name || item.stockItem?.name || '').toLowerCase().includes(search) ||
-                (item.department?.name || '').toLowerCase().includes(search);
+                (item.department?.name || '').toLowerCase().includes(search) ||
+                (item.room?.roomNumber || '').toLowerCase().includes(search) ||
+                (item.room?.floorLevel || '').toLowerCase().includes(search) ||
+                (item.room?.name || '').toLowerCase().includes(search);
 
             const matchesDepartment =
                 !filterDepartment ||
@@ -497,16 +583,26 @@ const AssignmentManagement = () => {
 
     // PRINT ASSIGNMENT
     const handlePrint = (assignment) => {
+        originalDocumentTitle.current = document.title;
+        document.title = ' ';
         setPrintAssignment(assignment);
-
-        setTimeout(() => {
-            window.print();
-        }, 300);
     };
+
+    // PRINT AFTER DOCUMENT RENDERS
+    useEffect(() => {
+        if (!printAssignment) return;
+
+        const timer = setTimeout(() => {
+            window.print();
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [printAssignment]);
 
     // PRINT COMPLETE
     useEffect(() => {
         const handleAfterPrint = () => {
+            document.title = originalDocumentTitle.current || 'UMC IT Inventory';
             setPrintAssignment(null);
         };
 
@@ -535,7 +631,23 @@ const AssignmentManagement = () => {
             {/* PRINT STYLE */}
             <style>
                 {`
+                    #assignment-print {
+                        display: none;
+                    }
+
+                    @page {
+                        size: A4;
+                        margin: 8mm;
+                    }
+
                     @media print {
+                        html,
+                        body {
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            background: white !important;
+                        }
+
                         body * {
                             visibility: hidden !important;
                         }
@@ -546,17 +658,117 @@ const AssignmentManagement = () => {
                         }
 
                         #assignment-print {
-                            position: absolute;
-                            left: 0;
-                            top: 0;
-                            width: 100%;
-                            padding: 30px;
-                            background: white;
+                            display: block !important;
+                            position: absolute !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 117.65% !important;
+                            max-width: none !important;
+                            padding: 0 !important;
+                            margin: 0 !important;
+                            box-sizing: border-box !important;
+                            background: white !important;
+                            color: black !important;
+                            font-size: 8.5pt !important;
+                            line-height: 1.15 !important;
+                            zoom: 0.85 !important;
                         }
 
-                        @page {
-                            size: A4;
-                            margin: 12mm;
+                        #assignment-print h1 {
+                            font-size: 18pt !important;
+                            margin: 0 !important;
+                        }
+
+                        #assignment-print h2 {
+                            font-size: 10pt !important;
+                            margin-top: 4px !important;
+                        }
+
+                        #assignment-print h3 {
+                            font-size: 10pt !important;
+                            margin-top: 8px !important;
+                            margin-bottom: 5px !important;
+                            padding-bottom: 3px !important;
+                            page-break-after: avoid !important;
+                            break-after: avoid !important;
+                        }
+
+                        #assignment-print table {
+                            width: 100% !important;
+                            margin-bottom: 8px !important;
+                            border-collapse: collapse !important;
+                            page-break-inside: auto !important;
+                            break-inside: auto !important;
+                        }
+
+                        #assignment-print th,
+                        #assignment-print td {
+                            padding: 4px !important;
+                            font-size: 8.5pt !important;
+                            line-height: 1.1 !important;
+                        }
+
+                        #assignment-print tr {
+                            page-break-inside: avoid !important;
+                            break-inside: avoid !important;
+                        }
+
+                        #assignment-print thead {
+                            display: table-header-group !important;
+                        }
+
+                        #assignment-print .pb-5 {
+                            padding-bottom: 6px !important;
+                        }
+
+                        #assignment-print .mb-6 {
+                            margin-bottom: 8px !important;
+                        }
+
+                        #assignment-print .mb-7 {
+                            margin-bottom: 8px !important;
+                        }
+
+                        #assignment-print .mb-10 {
+                            margin-bottom: 8px !important;
+                        }
+
+                        #assignment-print .mt-5 {
+                            margin-top: 6px !important;
+                        }
+
+                        #assignment-print .mt-24 {
+                            margin-top: 25px !important;
+                        }
+
+                        #assignment-print .mt-20 {
+                            margin-top: 12px !important;
+                        }
+
+                        #assignment-print .gap-16 {
+                            gap: 35px !important;
+                        }
+
+                        #assignment-print .text-sm {
+                            font-size: 8.5pt !important;
+                        }
+
+                        #assignment-print .text-xs {
+                            font-size: 7.5pt !important;
+                        }
+
+                        #assignment-print .grid {
+                            page-break-inside: avoid !important;
+                            break-inside: avoid !important;
+                        }
+
+                        #assignment-print > div:last-child {
+                            margin-top: 8px !important;
+                        }
+
+                        * {
+                            -webkit-print-color-adjust: exact !important;
+                            print-color-adjust: exact !important;
                         }
                     }
                 `}
@@ -620,7 +832,7 @@ const AssignmentManagement = () => {
                             </h1>
 
                             <p className="text-slate-500 text-sm mt-2">
-                                Manage department and individual IT equipment assignments.
+                                Manage department, individual and room IT equipment assignments.
                             </p>
                         </div>
 
@@ -692,12 +904,12 @@ const AssignmentManagement = () => {
                         />
 
                         <StatCard
-                            title="Individual Assignments"
-                            value={individualAssignments}
-                            icon="♙"
+                            title="Room Assignments"
+                            value={roomAssignments}
+                            icon="🚪"
                             color="bg-orange-50 text-orange-600"
                             accent="bg-orange-500"
-                            description="Person-based records"
+                            description="Room-based assignment records"
                         />
                     </div>
 
@@ -719,7 +931,9 @@ const AssignmentManagement = () => {
                                 }}
                                 className={`px-4 py-3 rounded-xl text-sm font-semibold transition flex items-center gap-2 ${
                                     activeTab === tab.name
-                                        ? 'bg-blue-600 text-white shadow-md'
+                                        ? tab.name === 'Assignment History'
+                                            ? 'bg-orange-500 text-white shadow-md shadow-orange-200'
+                                            : 'bg-blue-600 text-white shadow-md'
                                         : 'text-slate-600 hover:bg-slate-100'
                                 }`}
                             >
@@ -743,7 +957,6 @@ const AssignmentManagement = () => {
                             {activeTab === 'Overview' && (
                                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-8">
 
-                                    {/* ASSIGNMENT OVERVIEW */}
                                     <div className="xl:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
 
                                         <div className="flex justify-between items-center mb-6">
@@ -772,6 +985,11 @@ const AssignmentManagement = () => {
                                                 name: 'Individual Assignments',
                                                 value: individualAssignments,
                                                 color: 'bg-orange-500'
+                                            },
+                                            {
+                                                name: 'Room Assignments',
+                                                value: roomAssignments,
+                                                color: 'bg-violet-500'
                                             }
                                         ].map(item => {
                                             const percentage = totalAssignments
@@ -816,7 +1034,7 @@ const AssignmentManagement = () => {
                                             </h2>
 
                                             <p className="text-sm text-blue-100 mt-3 leading-6">
-                                                Assign available IT devices to departments or individual employees.
+                                                Assign available IT devices to departments, individual employees or specific rooms.
                                             </p>
                                         </div>
 
@@ -856,12 +1074,13 @@ const AssignmentManagement = () => {
                                             </p>
                                         ) : (
                                             <div className="overflow-x-auto">
-                                                <table className="w-full min-w-[750px] text-left">
+                                                <table className="w-full min-w-[850px] text-left">
                                                     <thead>
                                                         <tr className="border-b border-slate-100 text-xs text-slate-400 uppercase">
                                                             <th className="py-3 px-3">Assignment ID</th>
                                                             <th className="py-3 px-3">Product</th>
                                                             <th className="py-3 px-3">Department</th>
+                                                            <th className="py-3 px-3">Location</th>
                                                             <th className="py-3 px-3">Receiver</th>
                                                             <th className="py-3 px-3">Quantity</th>
                                                             <th className="py-3 px-3">Date</th>
@@ -881,6 +1100,12 @@ const AssignmentManagement = () => {
 
                                                                 <td className="py-4 px-3 text-sm text-slate-600">
                                                                     {item.department?.name || 'N/A'}
+                                                                </td>
+
+                                                                <td className="py-4 px-3 text-xs text-slate-600">
+                                                                    {item.assignmentType === 'Room'
+                                                                        ? `${item.room?.floorLevel || 'N/A'} / Room ${item.room?.roomNumber || item.room?.name || 'N/A'}`
+                                                                        : item.assignmentType}
                                                                 </td>
 
                                                                 <td className="py-4 px-3 text-sm text-slate-600">
@@ -930,7 +1155,7 @@ const AssignmentManagement = () => {
                                                 </p>
                                             </div>
 
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
                                                 <button
                                                     type="button"
@@ -993,6 +1218,38 @@ const AssignmentManagement = () => {
 
                                                     <p className="text-xs text-slate-500 mt-2 leading-5">
                                                         Assign equipment directly to a specific employee under a department.
+                                                    </p>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleAssignmentTypeChange('Room')}
+                                                    className={`p-5 rounded-2xl border-2 text-left transition ${
+                                                        formData.assignmentType === 'Room'
+                                                            ? 'border-blue-500 bg-blue-50'
+                                                            : 'border-slate-200 hover:border-blue-200'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-3xl">🚪</span>
+
+                                                        <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                                                            formData.assignmentType === 'Room'
+                                                                ? 'border-blue-600'
+                                                                : 'border-slate-300'
+                                                        }`}>
+                                                            {formData.assignmentType === 'Room' && (
+                                                                <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+                                                            )}
+                                                        </span>
+                                                    </div>
+
+                                                    <h3 className="font-bold text-slate-800 mt-4">
+                                                        Room Assignment
+                                                    </h3>
+
+                                                    <p className="text-xs text-slate-500 mt-2 leading-5">
+                                                        Assign equipment to a specific room with floor level and room number.
                                                     </p>
                                                 </button>
                                             </div>
@@ -1177,7 +1434,7 @@ const AssignmentManagement = () => {
 
                                                         <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
 
-                                                            {availableUnits.map((unit, index) => {
+                                                            {availableUnits.map((unit) => {
                                                                 const isSelected = selectedUnitIds.includes(unit._id);
 
                                                                 return (
@@ -1277,11 +1534,73 @@ const AssignmentManagement = () => {
                                                     </select>
                                                 </div>
 
+                                                {formData.assignmentType === 'Room' && (
+                                                    <>
+                                                        <div>
+                                                            {renderLabel('Floor Level', true)}
+
+                                                            <select
+                                                                value={formData.floorLevel}
+                                                                onChange={handleFloorLevelChange}
+                                                                className={inputClass}
+                                                                required
+                                                                disabled={!formData.departmentId}
+                                                            >
+                                                                <option value="">Select Floor Level</option>
+
+                                                                {availableFloorLevels.map(level => (
+                                                                    <option key={level} value={level}>
+                                                                        {level}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+
+                                                            {formData.departmentId && availableFloorLevels.length === 0 && (
+                                                                <p className="text-xs text-orange-500 mt-2">
+                                                                    No floor levels found for this department.
+                                                                </p>
+                                                            )}
+                                                        </div>
+
+                                                        <div>
+                                                            {renderLabel('Room Number', true)}
+
+                                                            <select
+                                                                name="roomId"
+                                                                value={formData.roomId}
+                                                                onChange={handleInputChange}
+                                                                className={inputClass}
+                                                                required
+                                                                disabled={!formData.floorLevel}
+                                                            >
+                                                                <option value="">Select Room Number</option>
+
+                                                                {availableRooms.map(room => (
+                                                                    <option key={room._id} value={room._id}>
+                                                                        {room.roomNumber || room.name}
+                                                                        {room.name && room.roomNumber
+                                                                            ? ` - ${room.name}`
+                                                                            : ''}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+
+                                                            {formData.floorLevel && availableRooms.length === 0 && (
+                                                                <p className="text-xs text-orange-500 mt-2">
+                                                                    No rooms found on this floor.
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </>
+                                                )}
+
                                                 <div>
                                                     {renderLabel(
                                                         formData.assignmentType === 'Department'
                                                             ? 'Receiving Person Name'
-                                                            : 'Employee / Person Name',
+                                                            : formData.assignmentType === 'Room'
+                                                                ? 'Room In-Charge / Receiver Name'
+                                                                : 'Employee / Person Name',
                                                         true
                                                     )}
 
@@ -1293,7 +1612,9 @@ const AssignmentManagement = () => {
                                                         placeholder={
                                                             formData.assignmentType === 'Department'
                                                                 ? 'Name of department representative'
-                                                                : 'Enter employee name'
+                                                                : formData.assignmentType === 'Room'
+                                                                    ? 'Enter room receiver name'
+                                                                    : 'Enter employee name'
                                                         }
                                                         className={inputClass}
                                                         required
@@ -1417,204 +1738,343 @@ const AssignmentManagement = () => {
 
                             {/* ASSIGNMENT HISTORY TAB */}
                             {activeTab === 'Assignment History' && (
-                                <div className="mt-8 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
+                                <div className="mt-8 space-y-6">
 
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-                                        <div>
-                                            <h2 className="text-lg font-bold text-slate-800">
-                                                Assignment History
-                                            </h2>
+                                    {/* HISTORY HEADER */}
+                                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-orange-500 via-orange-600 to-amber-500 p-6 sm:p-8 text-white shadow-lg shadow-orange-100">
 
-                                            <p className="text-xs text-slate-400 mt-1">
-                                                Search and review all assignment records
-                                            </p>
+                                        <div className="absolute -right-10 -top-16 w-56 h-56 rounded-full border-[28px] border-white/10" />
+                                        <div className="absolute right-24 -bottom-24 w-48 h-48 rounded-full border-[22px] border-white/10" />
+
+                                        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
+
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <span className="w-2 h-2 rounded-full bg-white" />
+                                                    <p className="text-xs font-bold tracking-[0.18em] text-orange-100 uppercase">
+                                                        Asset Distribution Records
+                                                    </p>
+                                                </div>
+
+                                                <h2 className="text-2xl sm:text-3xl font-bold">
+                                                    Assignment History
+                                                </h2>
+
+                                                <p className="text-sm text-orange-100 mt-2">
+                                                    Search, filter and review all assigned IT equipment.
+                                                </p>
+                                            </div>
+
+                                            <div className="bg-white/15 border border-white/20 backdrop-blur-sm rounded-2xl px-6 py-4 min-w-[130px]">
+                                                <p className="text-xs text-orange-100 font-semibold">
+                                                    Total Records
+                                                </p>
+
+                                                <p className="text-3xl font-bold mt-1">
+                                                    {filteredAssignments.length}
+                                                </p>
+                                            </div>
                                         </div>
-
-                                        <span className="text-xs bg-blue-50 text-blue-600 px-3 py-2 rounded-lg font-bold w-fit">
-                                            {filteredAssignments.length} Records
-                                        </span>
                                     </div>
 
-                                    {/* FILTERS */}
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+                                    {/* FILTER PANEL */}
+                                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
 
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-500 mb-2">
-                                                Search
-                                            </label>
+                                        <div className="px-5 sm:px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                            <div>
+                                                <h3 className="text-sm font-bold text-slate-800">
+                                                    Search & Filter Records
+                                                </h3>
 
-                                            <input
-                                                type="text"
-                                                value={searchTerm}
-                                                onChange={e => setSearchTerm(e.target.value)}
-                                                placeholder="ID, product, receiver..."
-                                                className={inputClass}
-                                            />
+                                                <p className="text-xs text-slate-400 mt-1">
+                                                    Find assignments using ID, product, department, room or receiver.
+                                                </p>
+                                            </div>
+
+                                            <button
+                                                onClick={() => {
+                                                    setSearchTerm('');
+                                                    setFilterDepartment('');
+                                                    setFilterType('');
+                                                    setFilterStatus('');
+                                                }}
+                                                className="px-4 py-2 rounded-lg border border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100 text-xs font-bold transition w-fit"
+                                            >
+                                                ↺ Clear All Filters
+                                            </button>
                                         </div>
 
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-500 mb-2">
-                                                Department
-                                            </label>
+                                        <div className="p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
 
-                                            <select
-                                                value={filterDepartment}
-                                                onChange={e => setFilterDepartment(e.target.value)}
-                                                className={inputClass}
-                                            >
-                                                <option value="">All Departments</option>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-2">
+                                                    Search Records
+                                                </label>
 
-                                                {departments.map(department => (
-                                                    <option key={department._id} value={department._id}>
-                                                        {department.name}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                                <div className="relative">
+                                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                                                        ⌕
+                                                    </span>
+
+                                                    <input
+                                                        type="text"
+                                                        value={searchTerm}
+                                                        onChange={e => setSearchTerm(e.target.value)}
+                                                        placeholder="ID, product, room, receiver..."
+                                                        className="w-full pl-9 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 outline-none focus:bg-white focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-2">
+                                                    Department
+                                                </label>
+
+                                                <select
+                                                    value={filterDepartment}
+                                                    onChange={e => setFilterDepartment(e.target.value)}
+                                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 outline-none focus:bg-white focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition"
+                                                >
+                                                    <option value="">All Departments</option>
+
+                                                    {departments.map(department => (
+                                                        <option key={department._id} value={department._id}>
+                                                            {department.name}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-2">
+                                                    Assignment Type
+                                                </label>
+
+                                                <select
+                                                    value={filterType}
+                                                    onChange={e => setFilterType(e.target.value)}
+                                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 outline-none focus:bg-white focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition"
+                                                >
+                                                    <option value="">All Types</option>
+                                                    <option value="Department">Department</option>
+                                                    <option value="Individual">Individual</option>
+                                                    <option value="Room">Room</option>
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-2">
+                                                    Assignment Status
+                                                </label>
+
+                                                <select
+                                                    value={filterStatus}
+                                                    onChange={e => setFilterStatus(e.target.value)}
+                                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 outline-none focus:bg-white focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition"
+                                                >
+                                                    <option value="">All Statuses</option>
+                                                    <option value="Active">Active</option>
+                                                    <option value="Returned">Returned</option>
+                                                    <option value="Cancelled">Cancelled</option>
+                                                </select>
+                                            </div>
                                         </div>
 
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-500 mb-2">
-                                                Assignment Type
-                                            </label>
+                                        <div className="px-5 sm:px-6 py-3 bg-orange-50/60 border-t border-orange-100 flex flex-wrap items-center justify-between gap-2">
+                                            <p className="text-xs text-slate-500">
+                                                Showing <strong className="text-orange-600">{filteredAssignments.length}</strong> matching records
+                                            </p>
 
-                                            <select
-                                                value={filterType}
-                                                onChange={e => setFilterType(e.target.value)}
-                                                className={inputClass}
-                                            >
-                                                <option value="">All Types</option>
-                                                <option value="Department">Department</option>
-                                                <option value="Individual">Individual</option>
-                                            </select>
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-500 mb-2">
-                                                Status
-                                            </label>
-
-                                            <select
-                                                value={filterStatus}
-                                                onChange={e => setFilterStatus(e.target.value)}
-                                                className={inputClass}
-                                            >
-                                                <option value="">All Statuses</option>
-                                                <option value="Active">Active</option>
-                                                <option value="Returned">Returned</option>
-                                                <option value="Cancelled">Cancelled</option>
-                                            </select>
+                                            <p className="text-xs text-slate-400">
+                                                Total assignments: {assignments.length}
+                                            </p>
                                         </div>
                                     </div>
 
                                     {/* HISTORY TABLE */}
-                                    {filteredAssignments.length === 0 ? (
-                                        <div className="py-12 text-center">
-                                            <div className="text-4xl mb-3">📋</div>
+                                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
 
-                                            <p className="text-sm font-semibold text-slate-600">
-                                                No assignments found
-                                            </p>
+                                        <div className="px-5 sm:px-6 py-5 border-b border-slate-100 flex items-center justify-between gap-3">
+                                            <div>
+                                                <h3 className="text-base font-bold text-slate-800">
+                                                    Assignment Records
+                                                </h3>
 
-                                            <p className="text-xs text-slate-400 mt-2">
-                                                Try changing your search or filters.
-                                            </p>
+                                                <p className="text-xs text-slate-400 mt-1">
+                                                    Complete history of assigned devices
+                                                </p>
+                                            </div>
+
+                                            <span className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center text-lg">
+                                                ◷
+                                            </span>
                                         </div>
-                                    ) : (
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full min-w-[1050px] text-left">
 
-                                                <thead>
-                                                    <tr className="border-b border-slate-100 text-xs text-slate-400 uppercase">
-                                                        <th className="py-4 px-3">Assignment ID</th>
-                                                        <th className="py-4 px-3">Product</th>
-                                                        <th className="py-4 px-3">Department</th>
-                                                        <th className="py-4 px-3">Receiver</th>
-                                                        <th className="py-4 px-3">Type</th>
-                                                        <th className="py-4 px-3">Quantity</th>
-                                                        <th className="py-4 px-3">Date</th>
-                                                        <th className="py-4 px-3">Status</th>
-                                                        <th className="py-4 px-3">Action</th>
-                                                    </tr>
-                                                </thead>
+                                        {filteredAssignments.length === 0 ? (
+                                            <div className="py-16 px-5 text-center">
+                                                <div className="w-16 h-16 mx-auto rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center text-3xl mb-4">
+                                                    📋
+                                                </div>
 
-                                                <tbody>
-                                                    {filteredAssignments.map(item => (
-                                                        <tr
-                                                            key={item._id}
-                                                            className="border-b border-slate-50 hover:bg-slate-50 transition"
-                                                        >
-                                                            <td className="py-4 px-3 text-xs font-bold text-blue-600">
-                                                                {item.assignmentId}
-                                                            </td>
+                                                <p className="text-base font-bold text-slate-700">
+                                                    No assignments found
+                                                </p>
 
-                                                            <td className="py-4 px-3">
-                                                                <p className="text-sm font-semibold text-slate-700">
-                                                                    {item.productDetails?.name || item.stockItem?.name || 'N/A'}
-                                                                </p>
+                                                <p className="text-sm text-slate-400 mt-2">
+                                                    Try changing your search or filters to find records.
+                                                </p>
 
-                                                                <p className="text-[11px] text-slate-400 mt-1">
-                                                                    {item.productDetails?.sku || item.stockItem?.sku || ''}
-                                                                </p>
-                                                            </td>
+                                                <button
+                                                    onClick={() => {
+                                                        setSearchTerm('');
+                                                        setFilterDepartment('');
+                                                        setFilterType('');
+                                                        setFilterStatus('');
+                                                    }}
+                                                    className="mt-5 px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition"
+                                                >
+                                                    Clear Filters
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full min-w-[1200px] text-left">
 
-                                                            <td className="py-4 px-3 text-sm text-slate-600">
-                                                                {item.department?.name || 'N/A'}
-                                                            </td>
+                                                        <thead>
+                                                            <tr className="bg-slate-50 border-b border-slate-200 text-[10px] text-slate-500 uppercase tracking-wider">
+                                                                <th className="py-4 px-4 font-bold">Assignment ID</th>
+                                                                <th className="py-4 px-4 font-bold">Product Details</th>
+                                                                <th className="py-4 px-4 font-bold">Department</th>
+                                                                <th className="py-4 px-4 font-bold">Room / Location</th>
+                                                                <th className="py-4 px-4 font-bold">Receiver</th>
+                                                                <th className="py-4 px-4 font-bold">Type</th>
+                                                                <th className="py-4 px-4 font-bold">Quantity</th>
+                                                                <th className="py-4 px-4 font-bold">Date</th>
+                                                                <th className="py-4 px-4 font-bold">Status</th>
+                                                                <th className="py-4 px-4 font-bold text-center">Action</th>
+                                                            </tr>
+                                                        </thead>
 
-                                                            <td className="py-4 px-3">
-                                                                <p className="text-sm font-semibold text-slate-700">
-                                                                    {item.receiver?.name || 'N/A'}
-                                                                </p>
-
-                                                                <p className="text-[11px] text-slate-400 mt-1">
-                                                                    {item.receiver?.employeeId || ''}
-                                                                </p>
-                                                            </td>
-
-                                                            <td className="py-4 px-3">
-                                                                <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold ${
-                                                                    item.assignmentType === 'Individual'
-                                                                        ? 'bg-violet-50 text-violet-600'
-                                                                        : 'bg-blue-50 text-blue-600'
-                                                                }`}>
-                                                                    {item.assignmentType}
-                                                                </span>
-                                                            </td>
-
-                                                            <td className="py-4 px-3 text-sm font-bold text-slate-700">
-                                                                {item.quantity}
-                                                            </td>
-
-                                                            <td className="py-4 px-3 text-xs text-slate-500">
-                                                                {formatDate(item.assignedDate)}
-                                                            </td>
-
-                                                            <td className="py-4 px-3">
-                                                                <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold ${
-                                                                    item.status === 'Returned'
-                                                                        ? 'bg-emerald-50 text-emerald-600'
-                                                                        : item.status === 'Cancelled'
-                                                                            ? 'bg-red-50 text-red-600'
-                                                                            : 'bg-blue-50 text-blue-600'
-                                                                }`}>
-                                                                    {item.status || 'Active'}
-                                                                </span>
-                                                            </td>
-
-                                                            <td className="py-4 px-3">
-                                                                <button
-                                                                    onClick={() => handlePrint(item)}
-                                                                    className="px-3 py-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 text-xs font-bold transition"
+                                                        <tbody>
+                                                            {filteredAssignments.map(item => (
+                                                                <tr
+                                                                    key={item._id}
+                                                                    className="border-b border-slate-100 hover:bg-orange-50/40 transition-colors"
                                                                 >
-                                                                    🖨 Print
-                                                                </button>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    )}
+                                                                    <td className="py-4 px-4">
+                                                                        <span className="inline-flex px-2.5 py-1.5 rounded-lg bg-orange-50 text-orange-700 text-[11px] font-bold border border-orange-100">
+                                                                            {item.assignmentId}
+                                                                        </span>
+                                                                    </td>
+
+                                                                    <td className="py-4 px-4">
+                                                                        <p className="text-sm font-bold text-slate-700">
+                                                                            {item.productDetails?.name || item.stockItem?.name || 'N/A'}
+                                                                        </p>
+
+                                                                        <p className="text-[11px] text-slate-400 mt-1">
+                                                                            SKU: {item.productDetails?.sku || item.stockItem?.sku || 'N/A'}
+                                                                        </p>
+                                                                    </td>
+
+                                                                    <td className="py-4 px-4">
+                                                                        <span className="text-sm font-medium text-slate-600">
+                                                                            {item.department?.name || 'N/A'}
+                                                                        </span>
+                                                                    </td>
+
+                                                                    <td className="py-4 px-4">
+                                                                        {item.assignmentType === 'Room' ? (
+                                                                            <>
+                                                                                <p className="text-sm font-semibold text-slate-700">
+                                                                                    {item.room?.roomNumber || item.room?.name || 'N/A'}
+                                                                                </p>
+
+                                                                                <p className="text-[11px] text-orange-600 mt-1 font-medium">
+                                                                                    {item.room?.floorLevel || 'Floor N/A'}
+                                                                                </p>
+                                                                            </>
+                                                                        ) : (
+                                                                            <span className="text-xs text-slate-400">
+                                                                                {item.assignmentType === 'Department'
+                                                                                    ? 'Department'
+                                                                                    : 'Individual'}
+                                                                            </span>
+                                                                        )}
+                                                                    </td>
+
+                                                                    <td className="py-4 px-4">
+                                                                        <p className="text-sm font-semibold text-slate-700">
+                                                                            {item.receiver?.name || 'N/A'}
+                                                                        </p>
+
+                                                                        <p className="text-[11px] text-slate-400 mt-1">
+                                                                            {item.receiver?.employeeId || 'No ID'}
+                                                                        </p>
+                                                                    </td>
+
+                                                                    <td className="py-4 px-4">
+                                                                        <span className={`inline-flex text-[10px] px-2.5 py-1.5 rounded-lg font-bold ${
+                                                                            item.assignmentType === 'Individual'
+                                                                                ? 'bg-violet-50 text-violet-700 border border-violet-100'
+                                                                                : item.assignmentType === 'Room'
+                                                                                    ? 'bg-orange-50 text-orange-700 border border-orange-100'
+                                                                                    : 'bg-blue-50 text-blue-700 border border-blue-100'
+                                                                        }`}>
+                                                                            {item.assignmentType}
+                                                                        </span>
+                                                                    </td>
+
+                                                                    <td className="py-4 px-4">
+                                                                        <span className="inline-flex min-w-9 justify-center px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold">
+                                                                            {item.quantity}
+                                                                        </span>
+                                                                    </td>
+
+                                                                    <td className="py-4 px-4 text-xs font-medium text-slate-500 whitespace-nowrap">
+                                                                        {formatDate(item.assignedDate)}
+                                                                    </td>
+
+                                                                    <td className="py-4 px-4">
+                                                                        <span className={`inline-flex text-[10px] px-2.5 py-1.5 rounded-lg font-bold ${
+                                                                            item.status === 'Returned'
+                                                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                                                                : item.status === 'Cancelled'
+                                                                                    ? 'bg-red-50 text-red-700 border border-red-100'
+                                                                                    : 'bg-orange-50 text-orange-700 border border-orange-100'
+                                                                        }`}>
+                                                                            {item.status || 'Active'}
+                                                                        </span>
+                                                                    </td>
+
+                                                                    <td className="py-4 px-4 text-center">
+                                                                        <button
+                                                                            onClick={() => handlePrint(item)}
+                                                                            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold shadow-sm shadow-orange-100 transition"
+                                                                        >
+                                                                            🖨 Print
+                                                                        </button>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+
+                                                <div className="px-5 sm:px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                                    <p className="text-xs text-slate-500">
+                                                        Displaying <strong className="text-slate-700">{filteredAssignments.length}</strong> assignment records
+                                                    </p>
+
+                                                    <p className="text-xs text-slate-400">
+                                                        United Medical College · IT Asset Management
+                                                    </p>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 
@@ -1756,12 +2216,13 @@ const AssignmentManagement = () => {
                                             </p>
                                         ) : (
                                             <div className="overflow-x-auto">
-                                                <table className="w-full min-w-[750px] text-left">
+                                                <table className="w-full min-w-[900px] text-left">
                                                     <thead>
                                                         <tr className="border-b border-slate-100 text-xs text-slate-400 uppercase">
                                                             <th className="py-3 px-3">Assignment ID</th>
                                                             <th className="py-3 px-3">Product</th>
                                                             <th className="py-3 px-3">Department</th>
+                                                            <th className="py-3 px-3">Location</th>
                                                             <th className="py-3 px-3">Receiver</th>
                                                             <th className="py-3 px-3">Type</th>
                                                             <th className="py-3 px-3">Quantity</th>
@@ -1782,6 +2243,12 @@ const AssignmentManagement = () => {
 
                                                                 <td className="py-4 px-3 text-sm text-slate-600">
                                                                     {item.department?.name || 'N/A'}
+                                                                </td>
+
+                                                                <td className="py-4 px-3 text-xs text-slate-600">
+                                                                    {item.assignmentType === 'Room'
+                                                                        ? `${item.room?.floorLevel || 'N/A'} / Room ${item.room?.roomNumber || item.room?.name || 'N/A'}`
+                                                                        : item.assignmentType}
                                                                 </td>
 
                                                                 <td className="py-4 px-3 text-sm text-slate-600">
@@ -1805,7 +2272,7 @@ const AssignmentManagement = () => {
 
                                                     <tfoot>
                                                         <tr className="bg-slate-50">
-                                                            <td colSpan="5" className="py-4 px-3 text-sm font-bold text-slate-700 text-right">
+                                                            <td colSpan="6" className="py-4 px-3 text-sm font-bold text-slate-700 text-right">
                                                                 Total Assigned Devices
                                                             </td>
 
@@ -1836,7 +2303,7 @@ const AssignmentManagement = () => {
 
             {/* PRINT DOCUMENT */}
             {printAssignment && (
-                <div id="assignment-print" className="hidden print:block text-black">
+                <div id="assignment-print" className="text-black">
 
                     <div className="text-center border-b-2 border-black pb-5 mb-6">
                         <h1 className="text-2xl font-bold">
@@ -1959,6 +2426,14 @@ const AssignmentManagement = () => {
                                     </td>
                                 </tr>
                             ))}
+
+                            {(!printAssignment.assets || printAssignment.assets.length === 0) && (
+                                <tr>
+                                    <td colSpan="3" className="border border-black p-3 text-center">
+                                        No device details available in this assignment record.
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
 
@@ -1987,6 +2462,30 @@ const AssignmentManagement = () => {
                                     {printAssignment.department?.name || 'N/A'}
                                 </td>
                             </tr>
+
+                            {printAssignment.assignmentType === 'Room' && (
+                                <>
+                                    <tr>
+                                        <td className="border border-black p-3 font-bold">
+                                            Floor Level
+                                        </td>
+
+                                        <td className="border border-black p-3">
+                                            {printAssignment.room?.floorLevel || 'N/A'}
+                                        </td>
+                                    </tr>
+
+                                    <tr>
+                                        <td className="border border-black p-3 font-bold">
+                                            Room Number
+                                        </td>
+
+                                        <td className="border border-black p-3">
+                                            {printAssignment.room?.roomNumber || printAssignment.room?.name || 'N/A'}
+                                        </td>
+                                    </tr>
+                                </>
+                            )}
 
                             <tr>
                                 <td className="border border-black p-3 font-bold">

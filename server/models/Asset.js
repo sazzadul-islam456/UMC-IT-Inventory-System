@@ -12,6 +12,14 @@ const assetSchema = new mongoose.Schema(
             required: true
         },
 
+        // STOCK UNIT REFERENCE
+        stockUnit: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'StockUnit',
+            unique: true,
+            sparse: true
+        },
+
         // UNIQUE ASSET ID
         assetId: {
             type: String,
@@ -57,7 +65,7 @@ const assetSchema = new mongoose.Schema(
         department: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Department',
-            required: true
+            default: null
         },
 
         // ROOM REFERENCE (OPTIONAL)
@@ -71,6 +79,7 @@ const assetSchema = new mongoose.Schema(
         status: {
             type: String,
             enum: [
+                'Available',
                 'Assigned',
                 'Damaged',
                 'Under Repair',

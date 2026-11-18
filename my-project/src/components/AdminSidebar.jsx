@@ -17,8 +17,10 @@ const AdminSidebar = () => {
         { name: 'Supplier Return', icon: '↩' },
         { name: 'Asset Management', icon: '▣' },
         { name: 'Assignment Management', icon: '📋' },
+        { name: 'Damage & Repair Management', icon: '🔧' },
         { name: 'Departments', icon: '▤' },
         { name: 'Room Management', icon: '🚪' },
+        { name: 'Room Inventory', icon: '📊' },
         { name: 'Reports', icon: '▥' },
         { name: 'Settings', icon: '⚙' }
     ];
@@ -34,15 +36,19 @@ const AdminSidebar = () => {
                 ? 'Asset Management'
                 : location.pathname === '/admin/assignments'
                     ? 'Assignment Management'
-                    : location.pathname === '/admin/departments'
-                        ? 'Departments'
-                        : location.pathname === '/admin/rooms'
-                            ? 'Room Management'
-                            : location.pathname === '/admin/users'
-                                ? 'User Management'
-                                : location.pathname === '/admin/dashboard'
-                                    ? (params.get('menu') || 'Dashboard')
-                                    : '';
+                    : location.pathname === '/admin/damage-repair'
+                        ? 'Damage & Repair Management'
+                        : location.pathname === '/admin/departments'
+                            ? 'Departments'
+                            : location.pathname === '/admin/rooms'
+                                ? 'Room Management'
+                                : location.pathname === '/admin/room-inventory'
+                                    ? 'Room Inventory'
+                                    : location.pathname === '/admin/users'
+                                        ? 'User Management'
+                                        : location.pathname === '/admin/dashboard'
+                                            ? (params.get('menu') || 'Dashboard')
+                                            : '';
 
     // MENU NAVIGATION - Search: MENU NAVIGATION
     const handleNavigation = (menuName) => {
@@ -68,6 +74,11 @@ const AdminSidebar = () => {
             return;
         }
 
+        if (menuName === 'Damage & Repair Management') {
+            navigate('/admin/damage-repair');
+            return;
+        }
+
         if (menuName === 'Departments') {
             navigate('/admin/departments');
             return;
@@ -75,6 +86,11 @@ const AdminSidebar = () => {
 
         if (menuName === 'Room Management') {
             navigate('/admin/rooms');
+            return;
+        }
+
+        if (menuName === 'Room Inventory') {
+            navigate('/admin/room-inventory');
             return;
         }
 

@@ -7,6 +7,8 @@ import Asset from '../models/Asset.js';
 import StockItem from '../models/StockItem.js';
 import StockUnit from '../models/StockUnit.js';
 import Department from '../models/Department.js';
+import Room from '../models/Room.js';
+import Counter from '../models/Counter.js';
 
 // ASSIGNMENT CONTROLLERS - Search: ASSIGNMENT CONTROLLERS
 
@@ -20,6 +22,7 @@ export const createAssignment = async (req, res) => {
             assignmentType,
             stockItemId,
             departmentId,
+            roomId,
             stockUnitIds,
             receiver,
             assignedDate,
@@ -33,16 +36,17 @@ export const createAssignment = async (req, res) => {
             !departmentId ||
             !Array.isArray(stockUnitIds) ||
             stockUnitIds.length === 0 ||
-            !receiver?.name
+            !receiver?.name ||
+            (assignmentType === 'Room' && !roomId)
         ) {
             return res.status(400).json({
                 success: false,
-                message: 'Assignment type, stock item, department, selected devices and receiver name are required'
+                message: 'Assignment type, stock item, department, selected devices and receiver name are required. Room is also required for Room Assignment.'
             });
         }
 
         // ASSIGNMENT TYPE VALIDATION
-        if (!['Department', 'Individual'].includes(assignmentType)) {
+        if (!['Department', 'Individual', 'Room'].includes(assignmentType)) {
             return res.status(400).json({
                 success: false,
                 message: 'Invalid assignment type'
@@ -66,11 +70,12 @@ export const createAssignment = async (req, res) => {
         // MONGODB ID VALIDATION
         if (
             !mongoose.isValidObjectId(stockItemId) ||
-            !mongoose.isValidObjectId(departmentId)
+            !mongoose.isValidObjectId(departmentId) ||
+            (assignmentType === 'Room' && !mongoose.isValidObjectId(roomId))
         ) {
             return res.status(400).json({
                 success: false,
-                message: 'Invalid stock item or department ID'
+                message: 'Invalid stock item, department or room ID'
             });
         }
 
@@ -102,7 +107,7 @@ export const createAssignment = async (req, res) => {
         session = await mongoose.startSession();
 
         let updatedStock;
-        let createdAssets;
+        let assignedAssets;
         let createdAssignment;
 
         await session.withTransaction(
@@ -132,6 +137,25 @@ export const createAssignment = async (req, res) => {
                     throw error;
                 }
 
+                // CHECK ROOM FOR ROOM ASSIGNMENT
+                let selectedRoom = null;
+
+                if (assignmentType === 'Room') {
+                    selectedRoom = await Room.findOne({
+                        _id: roomId,
+                        department: departmentId,
+                        isActive: true
+                    }).session(session);
+
+                    if (!selectedRoom) {
+                        const error = new Error(
+                            'Room not found, inactive or does not belong to the selected department'
+                        );
+                        error.statusCode = 404;
+                        throw error;
+                    }
+                }
+
                 // CHECK AVAILABLE STOCK QUANTITY
                 if (stockItem.availableQuantity < assignQuantity) {
                     const error = new Error(
@@ -145,43 +169,147 @@ export const createAssignment = async (req, res) => {
                 const availableUnits = await StockUnit.find({
                     _id: { $in: stockUnitIds },
                     stockItem: stockItemId,
-                    status: 'Available',
-                    asset: null
+                    status: 'Available'
                 }).session(session);
 
                 // CHECK SELECTED UNIT AVAILABILITY
                 if (availableUnits.length !== assignQuantity) {
                     const error = new Error(
-                        'Some selected devices are unavailable, already assigned or do not belong to this product. Please refresh and select again.'
+                        'Some selected devices are unavailable or do not belong to this product. Please refresh and select again.'
                     );
                     error.statusCode = 409;
                     throw error;
                 }
 
-                // PREPARE INDIVIDUAL ASSETS
-                const assets = availableUnits.map(unit => ({
-                    stockItem: stockItem._id,
+                // FIND EXISTING ASSETS USING BOTH REFERENCES
+                const unitIds = availableUnits.map(unit => unit._id);
 
-                    // USE STOCK UNIT CODE AS ASSET ID
-                    assetId: unit.unitCode,
+                const linkedAssetIds = availableUnits
+                    .filter(unit => unit.asset)
+                    .map(unit => unit.asset);
 
-                    // COPY MANUFACTURER SERIAL NUMBER
-                    ...(unit.serialNumber
-                        ? { serialNumber: unit.serialNumber }
-                        : {}),
+                const existingAssets = await Asset.find({
+                    $or: [
+                        { stockUnit: { $in: unitIds } },
+                        ...(linkedAssetIds.length
+                            ? [{ _id: { $in: linkedAssetIds } }]
+                            : [])
+                    ]
+                }).session(session);
 
-                    name: stockItem.name,
-                    brand: stockItem.brand || '',
-                    model: stockItem.model || '',
-                    sku: stockItem.sku || '',
+                // MAP ASSETS TO THEIR STOCK UNITS
+                const existingAssetMap = new Map();
 
-                    department: department._id,
-                    room: null,
+                for (const unit of availableUnits) {
 
-                    status: 'Assigned',
-                    assignedDate: assignmentDate,
-                    description: notes.trim()
-                }));
+                    const matchingAssets = existingAssets.filter(asset => (
+                        (
+                            asset.stockUnit &&
+                            asset.stockUnit.toString() === unit._id.toString()
+                        ) ||
+                        (
+                            unit.asset &&
+                            asset._id.toString() === unit.asset.toString()
+                        )
+                    ));
+
+                    // PREVENT MULTIPLE ASSETS FOR ONE STOCK UNIT
+                    const uniqueAssetIds = [
+                        ...new Set(
+                            matchingAssets.map(asset => asset._id.toString())
+                        )
+                    ];
+
+                    if (uniqueAssetIds.length > 1) {
+                        const error = new Error(
+                            `Multiple Assets are linked to Stock Unit ${unit.unitCode}. Please fix the duplicate records first.`
+                        );
+                        error.statusCode = 409;
+                        throw error;
+                    }
+
+                    if (matchingAssets.length > 0) {
+                        const existingAsset = matchingAssets[0];
+
+                        // VERIFY STOCK ITEM RELATIONSHIP
+                        if (
+                            existingAsset.stockItem.toString() !==
+                            stockItem._id.toString()
+                        ) {
+                            const error = new Error(
+                                `Existing Asset for Unit ${unit.unitCode} belongs to another stock item`
+                            );
+                            error.statusCode = 409;
+                            throw error;
+                        }
+
+                        // EXISTING ASSET MUST BE AVAILABLE
+                        if (existingAsset.status !== 'Available') {
+                            const error = new Error(
+                                `Existing Asset ${existingAsset.assetId} is not available for assignment`
+                            );
+                            error.statusCode = 409;
+                            throw error;
+                        }
+
+                        existingAssetMap.set(
+                            unit._id.toString(),
+                            existingAsset
+                        );
+                    }
+                }
+
+                // FIND STOCK UNITS THAT NEED NEW ASSETS
+                const newAssetUnits = availableUnits.filter(
+                    unit => !existingAssetMap.has(unit._id.toString())
+                );
+
+                // PREPARE NEW ASSETS ONLY
+                const newAssetsData = [];
+
+                for (const unit of newAssetUnits) {
+
+                    // GENERATE SEQUENTIAL ASSET ID
+                    const counter = await Counter.findOneAndUpdate(
+                        { _id: 'asset' },
+                        { $inc: { sequence: 1 } },
+                        {
+                            new: true,
+                            upsert: true,
+                            session,
+                            setDefaultsOnInsert: true
+                        }
+                    );
+
+                    newAssetsData.push({
+                        stockItem: stockItem._id,
+
+                        // LINK ASSET TO STOCK UNIT
+                        stockUnit: unit._id,
+
+                        // GENERATE READABLE ASSET ID
+                        assetId: `UMC-AST-${String(counter.sequence).padStart(6, '0')}`,
+
+                        // COPY MANUFACTURER SERIAL NUMBER
+                        ...(unit.serialNumber
+                            ? { serialNumber: unit.serialNumber }
+                            : {}),
+
+                        name: stockItem.name,
+                        brand: stockItem.brand || '',
+                        model: stockItem.model || '',
+                        sku: stockItem.sku || '',
+
+                        department: department._id,
+
+                        // SAVE ROOM FOR ROOM ASSIGNMENT
+                        room: selectedRoom ? selectedRoom._id : null,
+
+                        status: 'Assigned',
+                        assignedDate: assignmentDate,
+                        description: notes.trim()
+                    });
+                }
 
                 // ATOMIC STOCK QUANTITY UPDATE
                 updatedStock = await StockItem.findOneAndUpdate(
@@ -211,28 +339,105 @@ export const createAssignment = async (req, res) => {
                     throw error;
                 }
 
-                // CREATE ASSETS
-                createdAssets = await Asset.insertMany(
-                    assets,
-                    {
-                        ordered: true,
-                        session
-                    }
-                );
+                // CREATE ASSETS ONLY FOR NEW STOCK UNITS
+                const createdNewAssets = newAssetsData.length
+                    ? await Asset.insertMany(
+                        newAssetsData,
+                        {
+                            ordered: true,
+                            session
+                        }
+                    )
+                    : [];
 
-                // UPDATE SELECTED STOCK UNIT STATUS
+                // MAP NEW ASSETS TO THEIR STOCK UNITS
+                const newAssetMap = new Map();
+
+                newAssetUnits.forEach((unit, index) => {
+                    newAssetMap.set(
+                        unit._id.toString(),
+                        createdNewAssets[index]
+                    );
+                });
+
+                // REUSE OLD ASSETS OR USE NEWLY CREATED ASSETS
+                assignedAssets = availableUnits.map(unit => {
+                    return (
+                        existingAssetMap.get(unit._id.toString()) ||
+                        newAssetMap.get(unit._id.toString())
+                    );
+                });
+
+                // UPDATE EXISTING ASSETS FOR REASSIGNMENT
+                const existingAssetUpdates = availableUnits
+                    .filter(unit => existingAssetMap.has(unit._id.toString()))
+                    .map(unit => ({
+                        updateOne: {
+                            filter: {
+                                _id: existingAssetMap.get(
+                                    unit._id.toString()
+                                )._id,
+                                stockItem: stockItemId,
+                                status: 'Available'
+                            },
+                            update: {
+                                $set: {
+                                    stockUnit: unit._id,
+                                    department: department._id,
+                                    room: selectedRoom
+                                        ? selectedRoom._id
+                                        : null,
+                                    status: 'Assigned',
+                                    assignedDate: assignmentDate,
+                                    description: notes.trim()
+                                }
+                            }
+                        }
+                    }));
+
+                if (existingAssetUpdates.length) {
+                    const assetUpdateResult = await Asset.bulkWrite(
+                        existingAssetUpdates,
+                        { session }
+                    );
+
+                    // VERIFY EXISTING ASSET UPDATES
+                    if (
+                        assetUpdateResult.matchedCount !==
+                        existingAssetUpdates.length
+                    ) {
+                        const error = new Error(
+                            'Some existing assets could not be reassigned. Please try again.'
+                        );
+                        error.statusCode = 409;
+                        throw error;
+                    }
+                }
+
+                // VERIFY ALL ASSETS WERE FOUND OR CREATED
+                if (
+                    assignedAssets.length !== assignQuantity ||
+                    assignedAssets.some(asset => !asset)
+                ) {
+                    const error = new Error(
+                        'Some assets could not be linked to the selected stock units'
+                    );
+                    error.statusCode = 409;
+                    throw error;
+                }
+
+                // UPDATE SELECTED STOCK UNIT STATUS AND ASSET REFERENCE
                 const unitUpdates = availableUnits.map((unit, index) => ({
                     updateOne: {
                         filter: {
                             _id: unit._id,
                             stockItem: stockItemId,
-                            status: 'Available',
-                            asset: null
+                            status: 'Available'
                         },
                         update: {
                             $set: {
                                 status: 'Assigned',
-                                asset: createdAssets[index]._id
+                                asset: assignedAssets[index]._id
                             }
                         }
                     }
@@ -278,10 +483,13 @@ export const createAssignment = async (req, res) => {
                             // SAVE SELECTED STOCK UNITS
                             stockUnits: availableUnits.map(unit => unit._id),
 
-                            // SAVE CREATED ASSETS
-                            assets: createdAssets.map(asset => asset._id),
+                            // SAVE REUSED OR NEW ASSETS
+                            assets: assignedAssets.map(asset => asset._id),
 
                             department: department._id,
+
+                            // SAVE ROOM IN ASSIGNMENT RECORD
+                            room: selectedRoom ? selectedRoom._id : null,
 
                             receiver: {
                                 name: receiver.name.trim(),
@@ -313,7 +521,7 @@ export const createAssignment = async (req, res) => {
             assignment: createdAssignment,
             assignedQuantity: assignQuantity,
             stock: updatedStock,
-            assets: createdAssets
+            assets: assignedAssets
         });
 
     } catch (error) {
@@ -361,6 +569,7 @@ export const getAllAssignments = async (req, res) => {
         const assignments = await Assignment.find()
             .populate('stockItem', 'name category brand model sku')
             .populate('department', 'name')
+            .populate('room', 'name roomNumber floorLevel')
             .populate('stockUnits', 'unitCode serialNumber status')
             .populate('assets', 'assetId serialNumber status')
             .sort({ assignedDate: -1 });
@@ -377,6 +586,63 @@ export const getAllAssignments = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: 'Failed to fetch assignments',
+            error: error.message
+        });
+    }
+};
+
+
+// GET ROOM INVENTORY - Search: GET ROOM INVENTORY
+export const getRoomInventory = async (req, res) => {
+    try {
+        const { roomId } = req.params;
+
+        // VALIDATE ROOM ID
+        if (!mongoose.isValidObjectId(roomId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid room ID'
+            });
+        }
+
+        // FIND ACTIVE ROOM
+        const room = await Room.findOne({
+            _id: roomId,
+            isActive: true
+        })
+            .populate('department', 'name');
+
+        if (!room) {
+            return res.status(404).json({
+                success: false,
+                message: 'Room not found or inactive'
+            });
+        }
+
+        // FIND CURRENT DEVICES IN THIS ROOM
+        const assets = await Asset.find({
+            room: roomId,
+            status: {
+                $in: ['Assigned', 'Damaged', 'Under Repair']
+            }
+        })
+            .populate('stockItem', 'name category brand model sku')
+            .populate('department', 'name')
+            .sort({ name: 1, assetId: 1 });
+
+        return res.status(200).json({
+            success: true,
+            room,
+            count: assets.length,
+            assets
+        });
+
+    } catch (error) {
+        console.error('GET ROOM INVENTORY ERROR:', error);
+
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch room inventory',
             error: error.message
         });
     }
