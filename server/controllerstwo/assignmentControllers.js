@@ -567,11 +567,11 @@ export const createAssignment = async (req, res) => {
 export const getAllAssignments = async (req, res) => {
     try {
         const assignments = await Assignment.find()
-            .populate('stockItem', 'name category brand model sku')
+            .populate('items.stockItem', 'name category brand model sku')
+            .populate('items.stockUnits', 'unitCode serialNumber status')
+            .populate('items.assets', 'assetId serialNumber status')
             .populate('department', 'name')
             .populate('room', 'name roomNumber floorLevel')
-            .populate('stockUnits', 'unitCode serialNumber status')
-            .populate('assets', 'assetId serialNumber status')
             .sort({ assignedDate: -1 });
 
         return res.status(200).json({

@@ -20,54 +20,59 @@ const assignmentSchema = new mongoose.Schema(
             required: true
         },
 
-        // STOCK PRODUCT REFERENCE
-        stockItem: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'StockItem',
-            required: true
-        },
-
-        // PRODUCT INFORMATION SNAPSHOT
-        productDetails: {
-            name: {
-                type: String,
-                required: true,
-                trim: true
-            },
-            brand: {
-                type: String,
-                default: ''
-            },
-            model: {
-                type: String,
-                default: ''
-            },
-            sku: {
-                type: String,
-                default: ''
-            }
-        },
-
-        // ASSIGNED QUANTITY
-        quantity: {
-            type: Number,
-            required: true,
-            min: 1
-        },
-
-        // ASSIGNED STOCK UNITS
-        stockUnits: [
+        // MULTIPLE ASSIGNED PRODUCTS
+        items: [
             {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: 'StockUnit'
-            }
-        ],
+                // STOCK PRODUCT REFERENCE
+                stockItem: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'StockItem',
+                    required: true
+                },
 
-        // CREATED ASSET REFERENCES
-        assets: [
-            {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: 'Asset'
+                // PRODUCT INFORMATION SNAPSHOT
+                productDetails: {
+                    name: {
+                        type: String,
+                        required: true,
+                        trim: true
+                    },
+                    brand: {
+                        type: String,
+                        default: ''
+                    },
+                    model: {
+                        type: String,
+                        default: ''
+                    },
+                    sku: {
+                        type: String,
+                        default: ''
+                    }
+                },
+
+                // ASSIGNED QUANTITY
+                quantity: {
+                    type: Number,
+                    required: true,
+                    min: 1
+                },
+
+                // ASSIGNED STOCK UNITS
+                stockUnits: [
+                    {
+                        type: mongoose.Schema.Types.ObjectId,
+                        ref: 'StockUnit'
+                    }
+                ],
+
+                // CREATED ASSET REFERENCES
+                assets: [
+                    {
+                        type: mongoose.Schema.Types.ObjectId,
+                        ref: 'Asset'
+                    }
+                ]
             }
         ],
 
@@ -130,6 +135,7 @@ const assignmentSchema = new mongoose.Schema(
     }
 );
 
+// ASSIGNMENT INDEXES
 assignmentSchema.index({ department: 1, assignedDate: -1 });
 assignmentSchema.index({ assignmentType: 1, assignedDate: -1 });
 

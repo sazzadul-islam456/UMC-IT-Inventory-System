@@ -70,13 +70,21 @@ const stockItemSchema = new mongoose.Schema(
         availableQuantity: {
             type: Number,
             default: 0,
-            min: 0
+            min: 0,
+            validate: {
+                validator: Number.isSafeInteger,
+                message: 'Available quantity must be a non-negative whole number'
+            }
         },
 
         assignedQuantity: {
             type: Number,
             default: 0,
-            min: 0
+            min: 0,
+            validate: {
+                validator: Number.isSafeInteger,
+                message: 'Assigned quantity must be a non-negative whole number'
+            }
         },
 
         damagedQuantity: {

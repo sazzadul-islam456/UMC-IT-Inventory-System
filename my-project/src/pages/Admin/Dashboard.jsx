@@ -137,6 +137,24 @@ const numberFormat = (value) => {
     return (Number(value) || 0).toLocaleString('en-BD');
 };
 
+// FORMAT DATE RANGE FOR REPORT
+const formatReportDate = (date) => {
+    if (!date) return 'N/A';
+
+    const parsedDate = new Date(`${date}T00:00:00+06:00`);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+        return date;
+    }
+
+    return parsedDate.toLocaleDateString('en-GB', {
+        timeZone: 'Asia/Dhaka',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric'
+    });
+};
+
 // ACTIVITY ICON
 const getActivityStyle = (type) => {
     const styles = {
@@ -205,6 +223,15 @@ const Dashboard = () => {
     const [printLoading, setPrintLoading] = useState(false);
     const [printError, setPrintError] = useState('');
     const [pendingPrint, setPendingPrint] = useState(false);
+
+    // PRINT REPORT FILTER STATE
+    const [printReportType, setPrintReportType] = useState('month');
+    const [printDate, setPrintDate] = useState('');
+    const [printMonth, setPrintMonth] = useState(
+        `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+    );
+    const [printDateFrom, setPrintDateFrom] = useState('');
+    const [printDateTo, setPrintDateTo] = useState('');
 
     // USER LIST
     const [users, setUsers] = useState([]);
@@ -338,8 +365,12 @@ const Dashboard = () => {
     // PRINT AFTER PRINT DATA IS READY
     useEffect(() => {
         if (pendingPrint && printAuditData) {
-            window.print();
-            setPendingPrint(false);
+            const printTimer = setTimeout(() => {
+                window.print();
+                setPendingPrint(false);
+            }, 300);
+
+            return () => clearTimeout(printTimer);
         }
     }, [pendingPrint, printAuditData]);
 
@@ -354,8 +385,8 @@ const Dashboard = () => {
         fetchDashboardAudit();
     };
 
-    // PRINT WEEKLY OR MONTHLY REPORT
-    const handlePrintReport = async (selectedPeriod) => {
+    // GENERATE PRINT REPORT
+    const handlePrintReport = async (selectedType = printReportType) => {
         setPrintLoading(true);
         setPrintError('');
         setPrintAuditData(null);
@@ -363,9 +394,73 @@ const Dashboard = () => {
         try {
             const token = getToken();
 
-            const params = new URLSearchParams({
-                period: selectedPeriod
-            });
+            const params = new URLSearchParams();
+            let requestPeriod = selectedType;
+
+            // WEEKLY REPORT
+            if (selectedType === 'week') {
+                params.set('period', 'week');
+            }
+
+            // CURRENT MONTH REPORT
+            else if (selectedType === 'month') {
+                params.set('period', 'month');
+            }
+
+            // SELECTED MONTH REPORT
+            else if (selectedType === 'selectedMonth') {
+                if (!printMonth) {
+                    throw new Error('Please select a month.');
+                }
+
+                const [year, month] = printMonth.split('-').map(Number);
+
+                const firstDate = `${year}-${String(month).padStart(2, '0')}-01`;
+
+                const lastDay = new Date(year, month, 0).getDate();
+
+                const lastDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+                requestPeriod = 'custom';
+
+                params.set('period', 'custom');
+                params.set('dateFrom', firstDate);
+                params.set('dateTo', lastDate);
+            }
+
+            // SINGLE DATE REPORT
+            else if (selectedType === 'daily') {
+                if (!printDate) {
+                    throw new Error('Please select a date for the report.');
+                }
+
+                requestPeriod = 'custom';
+
+                params.set('period', 'custom');
+                params.set('dateFrom', printDate);
+                params.set('dateTo', printDate);
+            }
+
+            // CUSTOM DATE RANGE REPORT
+            else if (selectedType === 'custom') {
+                if (!printDateFrom || !printDateTo) {
+                    throw new Error('Please select both start and end dates.');
+                }
+
+                if (printDateFrom > printDateTo) {
+                    throw new Error('Start date cannot be after end date.');
+                }
+
+                requestPeriod = 'custom';
+
+                params.set('period', 'custom');
+                params.set('dateFrom', printDateFrom);
+                params.set('dateTo', printDateTo);
+            }
+
+            else {
+                throw new Error('Please select a valid report type.');
+            }
 
             const response = await fetch(
                 `${API_URL}?${params.toString()}`,
@@ -383,6 +478,9 @@ const Dashboard = () => {
                     data.message || 'Unable to generate print report.'
                 );
             }
+
+            // KEEP SELECTED REPORT TYPE FOR DISPLAY
+            data.printReportSelection = selectedType;
 
             setPrintAuditData(data);
             setPendingPrint(true);
@@ -550,6 +648,60 @@ const Dashboard = () => {
     const printSupplierReturns = printReport.supplierReturns || {};
     const printActivities = printAuditData?.activities || [];
 
+    // DETERMINE PRINT REPORT TITLE
+    const reportDateFrom = printAuditData?.period?.dateFrom || '';
+    const reportDateTo = printAuditData?.period?.dateTo || '';
+
+    const isSingleDayReport = (
+        reportDateFrom &&
+        reportDateTo &&
+        reportDateFrom === reportDateTo
+    );
+
+    const isFullMonthReport = (() => {
+        if (!reportDateFrom || !reportDateTo) return false;
+
+        const [year, month] = reportDateFrom.split('-').map(Number);
+
+        if (!year || !month) return false;
+
+        const lastDay = new Date(year, month, 0).getDate();
+
+        const expectedLastDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+        return (
+            reportDateFrom.endsWith('-01') &&
+            reportDateTo === expectedLastDate
+        );
+    })();
+
+    const printReportTitle = (() => {
+        if (printAuditData?.period?.type === 'week') {
+            return 'WEEKLY AUDIT REPORT';
+        }
+
+        if (printAuditData?.printReportSelection === 'daily' || isSingleDayReport) {
+            return 'DAILY AUDIT REPORT';
+        }
+
+        if (
+            printAuditData?.printReportSelection === 'selectedMonth' ||
+            isFullMonthReport
+        ) {
+            return 'MONTHLY AUDIT REPORT';
+        }
+
+        if (printAuditData?.period?.type === 'month') {
+            return 'MONTHLY AUDIT REPORT';
+        }
+
+        return 'CUSTOM DATE RANGE AUDIT REPORT';
+    })();
+
+    const printReportTypeLabel = printReportTitle
+        .replace(' AUDIT REPORT', '')
+        .replace('CUSTOM DATE RANGE', 'CUSTOM DATE RANGE');
+
     // DASHBOARD NAVIGATION
     const handleNavigation = (menuName) => {
         if (menuName === 'User Management') {
@@ -581,7 +733,7 @@ const Dashboard = () => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-100 flex">
+        <div className="dashboard-root min-h-screen bg-slate-100 flex">
 
             {/* REUSABLE ADMIN SIDEBAR */}
             <div className="no-print">
@@ -662,7 +814,7 @@ const Dashboard = () => {
                             {/* PRINT REPORT OPTIONS */}
                             <div className="no-print bg-white border border-slate-200 rounded-2xl p-5 mb-8 shadow-sm">
 
-                                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                                <div className="flex flex-col gap-5">
 
                                     <div>
                                         <div className="flex items-center gap-2">
@@ -674,25 +826,113 @@ const Dashboard = () => {
                                         </div>
 
                                         <p className="text-xs text-slate-400 mt-2 ml-4">
-                                            Generate an official A4 audit report sheet.
+                                            Generate an official A4 audit report using recorded database information.
                                         </p>
                                     </div>
 
+                                    {/* REPORT TYPE */}
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-2">
+                                            SELECT REPORT TYPE
+                                        </label>
+
+                                        <select
+                                            value={printReportType}
+                                            onChange={(e) => {
+                                                setPrintReportType(e.target.value);
+                                                setPrintError('');
+                                            }}
+                                            className="w-full md:max-w-md px-4 py-3 border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:border-orange-500"
+                                        >
+                                            <option value="week">Weekly Report - Current Week</option>
+                                            <option value="month">Monthly Report - Current Month</option>
+                                            <option value="selectedMonth">Select Previous / Specific Month</option>
+                                            <option value="daily">Specific Date Report</option>
+                                            <option value="custom">Custom Date Range Report</option>
+                                        </select>
+                                    </div>
+
+                                    {/* SELECTED MONTH */}
+                                    {printReportType === 'selectedMonth' && (
+                                        <div className="max-w-md">
+                                            <label className="block text-xs font-bold text-slate-500 mb-2">
+                                                SELECT MONTH
+                                            </label>
+
+                                            <input
+                                                type="month"
+                                                value={printMonth}
+                                                onChange={(e) => setPrintMonth(e.target.value)}
+                                                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-orange-500"
+                                            />
+
+                                            <p className="text-xs text-slate-400 mt-2">
+                                                The report will include the first to the last day of the selected month.
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* SINGLE DATE */}
+                                    {printReportType === 'daily' && (
+                                        <div className="max-w-md">
+                                            <label className="block text-xs font-bold text-slate-500 mb-2">
+                                                SELECT REPORT DATE
+                                            </label>
+
+                                            <input
+                                                type="date"
+                                                value={printDate}
+                                                onChange={(e) => setPrintDate(e.target.value)}
+                                                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-orange-500"
+                                            />
+
+                                            <p className="text-xs text-slate-400 mt-2">
+                                                Only activities recorded on the selected date will be included.
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* CUSTOM DATE RANGE */}
+                                    {printReportType === 'custom' && (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
+
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 mb-2">
+                                                    START DATE
+                                                </label>
+
+                                                <input
+                                                    type="date"
+                                                    value={printDateFrom}
+                                                    onChange={(e) => setPrintDateFrom(e.target.value)}
+                                                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-orange-500"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-500 mb-2">
+                                                    END DATE
+                                                </label>
+
+                                                <input
+                                                    type="date"
+                                                    value={printDateTo}
+                                                    min={printDateFrom || undefined}
+                                                    onChange={(e) => setPrintDateTo(e.target.value)}
+                                                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none focus:border-orange-500"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* GENERATE BUTTON */}
                                     <div className="flex flex-wrap gap-3">
                                         <button
-                                            onClick={() => handlePrintReport('week')}
+                                            onClick={() => handlePrintReport()}
                                             disabled={printLoading}
-                                            className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-sm font-bold shadow-sm transition disabled:opacity-50"
+                                            className="px-6 py-3 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-sm font-bold shadow-sm transition disabled:opacity-50"
                                         >
-                                            {printLoading ? 'Preparing...' : '🖨 Weekly Report'}
-                                        </button>
-
-                                        <button
-                                            onClick={() => handlePrintReport('month')}
-                                            disabled={printLoading}
-                                            className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold shadow-sm transition disabled:opacity-50"
-                                        >
-                                            {printLoading ? 'Preparing...' : '🖨 Monthly Report'}
+                                            {printLoading ? 'Preparing Report...' : '🖨 Generate & Print Report'}
                                         </button>
                                     </div>
                                 </div>
@@ -706,7 +946,7 @@ const Dashboard = () => {
                                 )}
                             </div>
 
-                            {/* REPORT FILTER */}
+                            {/* REPORT FILTER
                             <div className="no-print bg-white border border-slate-200 rounded-2xl p-5 mb-8 shadow-sm">
 
                                 <div className="flex flex-col lg:flex-row lg:items-end gap-4">
@@ -772,7 +1012,7 @@ const Dashboard = () => {
                                         Showing dashboard report: {auditData.period.dateFrom} to {auditData.period.dateTo}
                                     </p>
                                 )}
-                            </div>
+                            </div> */}
 
                             {/* LOADING / ERROR */}
                             {auditLoading && !auditData && (
@@ -1547,18 +1787,14 @@ const Dashboard = () => {
                         </div>
 
                         <div className="print-report-title">
-                            <h2>
-                                {printAuditData.period?.type === 'week'
-                                    ? 'WEEKLY AUDIT REPORT'
-                                    : 'MONTHLY AUDIT REPORT'}
-                            </h2>
+                            <h2>{printReportTitle}</h2>
 
                             <p>
                                 Reporting Period:
                                 {' '}
-                                {printAuditData.period?.dateFrom || 'N/A'}
+                                {formatReportDate(printAuditData.period?.dateFrom)}
                                 {' '} TO {' '}
-                                {printAuditData.period?.dateTo || 'N/A'}
+                                {formatReportDate(printAuditData.period?.dateTo)}
                             </p>
                         </div>
 
@@ -1566,11 +1802,7 @@ const Dashboard = () => {
                         <div className="print-meta-grid">
                             <div>
                                 <span>Report Type</span>
-                                <strong>
-                                    {printAuditData.period?.type === 'week'
-                                        ? 'Weekly'
-                                        : 'Monthly'}
-                                </strong>
+                                <strong>{printReportTypeLabel}</strong>
                             </div>
 
                             <div>
@@ -1585,12 +1817,30 @@ const Dashboard = () => {
 
                             <div>
                                 <span>Report Reference</span>
-                                <strong>UMC-IT-AUDIT-{printAuditData.period?.type?.toUpperCase()}</strong>
+                                <strong>
+                                    UMC-IT-AUDIT-{printReportTypeLabel.replaceAll(' ', '-')}
+                                </strong>
                             </div>
                         </div>
 
+                        {/* OFFICIAL REPORT INTRODUCTION */}
+                        <div className="print-introduction">
+                            <p>
+                                This document presents the inventory position and recorded
+                                IT asset management activities of United Medical College
+                                for the reporting period stated above. The information below
+                                is compiled from the institution's IT Inventory & Asset
+                                Management System.
+                            </p>
+                        </div>
+
                         {/* CURRENT STOCK */}
-                        <PrintSection title="01. CURRENT STOCK INVENTORY">
+                        <PrintSection title="01. CURRENT STOCK INVENTORY POSITION">
+                            <p className="print-section-description">
+                                The following figures represent the current stock inventory
+                                quantities recorded in the system at the time this report was generated.
+                            </p>
+
                             <table className="print-table">
                                 <thead>
                                     <tr>
@@ -1611,7 +1861,12 @@ const Dashboard = () => {
                         </PrintSection>
 
                         {/* CURRENT ASSETS */}
-                        <PrintSection title="02. CURRENT ASSET MANAGEMENT">
+                        <PrintSection title="02. CURRENT ASSET MANAGEMENT POSITION">
+                            <p className="print-section-description">
+                                The table below summarises the current registered asset records
+                                and their respective operational statuses.
+                            </p>
+
                             <table className="print-table">
                                 <thead>
                                     <tr>
@@ -1632,6 +1887,11 @@ const Dashboard = () => {
 
                         {/* HISTORICAL ACTIVITIES */}
                         <PrintSection title="03. PERIOD AUDIT ACTIVITY SUMMARY">
+                            <p className="print-section-description">
+                                The following table records the stock and asset management
+                                activities registered during the selected reporting period.
+                            </p>
+
                             <table className="print-table">
                                 <thead>
                                     <tr>
@@ -1692,6 +1952,11 @@ const Dashboard = () => {
 
                         {/* INSTITUTION SUMMARY */}
                         <PrintSection title="04. DEPARTMENT, ROOM & USER SUMMARY">
+                            <p className="print-section-description">
+                                This section provides an overview of registered institutional
+                                departments, rooms and user accounts.
+                            </p>
+
                             <table className="print-table">
                                 <thead>
                                     <tr>
@@ -1739,10 +2004,15 @@ const Dashboard = () => {
                         </PrintSection>
 
                         {/* ACTIVITY REGISTER */}
-                        <PrintSection title="05. AUDIT ACTIVITY REGISTER">
+                        <PrintSection title="05. DETAILED AUDIT ACTIVITY REGISTER">
+                            <p className="print-section-description">
+                                The following register contains the activity records returned
+                                by the system for the selected reporting period.
+                            </p>
+
                             {printActivities.length === 0 ? (
                                 <p className="print-empty">
-                                    No activity records found for this reporting period.
+                                    No activity records were found for this reporting period.
                                 </p>
                             ) : (
                                 <table className="print-table print-activity-table">
@@ -1787,36 +2057,45 @@ const Dashboard = () => {
 
                         {/* DECLARATION */}
                         <div className="print-declaration">
-                            <strong>Audit Declaration</strong>
+                            <strong>OFFICIAL AUDIT DECLARATION</strong>
                             <p>
                                 This report has been generated from the United Medical College
                                 IT Inventory & Asset Management System database. The figures
                                 represent the recorded information available for the stated
-                                reporting period and current inventory status.
+                                reporting period and the current inventory status at the time
+                                of report generation. This document is intended for official
+                                institutional review, verification and record-keeping.
                             </p>
                         </div>
 
                         {/* SIGNATURES */}
+                        <div className="print-signature-heading">
+                            OFFICIAL REVIEW & AUTHORIZATION
+                        </div>
+
                         <div className="print-signature-grid">
                             <div>
                                 <div className="print-signature-line"></div>
-                                <strong>Prepared By</strong>
+                                <strong>PREPARED BY</strong>
                                 <span>{user?.name || 'Administrator'}</span>
                                 <span>IT Department</span>
+                                <span>Date: __________________</span>
                             </div>
 
                             <div>
                                 <div className="print-signature-line"></div>
-                                <strong>Checked & Verified By</strong>
-                                <span>Name: ____________________</span>
+                                <strong>CHECKED & VERIFIED BY</strong>
+                                <span>Name: __________________</span>
                                 <span>Designation: ______________</span>
+                                <span>Date: __________________</span>
                             </div>
 
                             <div>
                                 <div className="print-signature-line"></div>
-                                <strong>Authorized Signature</strong>
-                                <span>United Medical College</span>
-                                <span>Date: ____________________</span>
+                                <strong>AUTHORIZED BY</strong>
+                                <span>Authority Name: ____________</span>
+                                <span>Designation: ______________</span>
+                                <span>Date: __________________</span>
                             </div>
                         </div>
 
@@ -1831,320 +2110,480 @@ const Dashboard = () => {
             )}
 
             {/* PRINT STYLES */}
-            <style>
-                {`
-                    @keyframes fadeIn {
-                        from {
-                            opacity: 0;
-                            transform: translateY(12px);
-                        }
-                        to {
-                            opacity: 1;
-                            transform: translateY(0);
-                        }
-                    }
+            
+<style>
+    {`
+        /* =========================================
+           DASHBOARD ANIMATION
+        ========================================= */
 
-                    .print-report-sheet {
-                        display: none;
-                    }
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
 
-                    @media print {
-                        @page {
-                            size: A4 portrait;
-                            margin: 10mm;
-                        }
 
-                        html,
-                        body {
-                            background: #ffffff !important;
-                            margin: 0 !important;
-                            padding: 0 !important;
-                            width: 100% !important;
-                            -webkit-print-color-adjust: exact !important;
-                            print-color-adjust: exact !important;
-                        }
+        /* =========================================
+           PRINT REPORT - SCREEN DEFAULT
+        ========================================= */
 
-                        body * {
-                            visibility: hidden !important;
-                        }
+        .print-report-sheet {
+            display: none;
+        }
 
-                        .print-report-sheet,
-                        .print-report-sheet * {
-                            visibility: visible !important;
-                        }
 
-                        .print-report-sheet {
-                            display: block !important;
-                            position: absolute !important;
-                            left: 0 !important;
-                            top: 0 !important;
-                            width: 100% !important;
-                            background: #ffffff !important;
-                            color: #111827 !important;
-                            font-family: Arial, Helvetica, sans-serif !important;
-                        }
+        /* =========================================
+           A4 PAGE CONFIGURATION
+        ========================================= */
 
-                        .print-paper {
-                            width: 100% !important;
-                            margin: 0 auto !important;
-                            padding: 0 !important;
-                            background: #ffffff !important;
-                            color: #111827 !important;
-                            font-size: 10px !important;
-                        }
+        @media print {
 
-                        .print-header {
-                            display: flex !important;
-                            align-items: center !important;
-                            justify-content: center !important;
-                            gap: 18px !important;
-                            padding-bottom: 12px !important;
-                            border-bottom: 3px double #1e3a8a !important;
-                        }
+            @page {
+                size: A4 portrait;
+                margin: 10mm;
+            }
 
-                        .print-logo {
-                            width: 55px !important;
-                            height: 55px !important;
-                            border: 3px solid #1e3a8a !important;
-                            border-radius: 50% !important;
-                            color: #1e3a8a !important;
-                            display: flex !important;
-                            align-items: center !important;
-                            justify-content: center !important;
-                            font-size: 18px !important;
-                            font-weight: 900 !important;
-                            flex-shrink: 0 !important;
-                        }
+            html,
+            body {
+                width: 100% !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
 
-                        .print-header-content {
-                            text-align: center !important;
-                        }
 
-                        .print-header-content h1 {
-                            font-size: 20px !important;
-                            font-weight: 900 !important;
-                            letter-spacing: 1px !important;
-                            color: #172554 !important;
-                            margin: 0 !important;
-                        }
+            /* =====================================
+               HIDE DASHBOARD, SHOW REPORT ONLY
+            ===================================== */
 
-                        .print-header-content h2 {
-                            font-size: 11px !important;
-                            font-weight: 700 !important;
-                            letter-spacing: 1px !important;
-                            margin: 4px 0 !important;
-                        }
+            .dashboard-root {
+                display: block !important;
+                width: 100% !important;
+                height: auto !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+            }
 
-                        .print-header-content p {
-                            font-size: 9px !important;
-                            font-weight: 700 !important;
-                            letter-spacing: 2px !important;
-                            color: #c2410c !important;
-                            margin: 5px 0 0 !important;
-                        }
+            .dashboard-root > :not(.print-report-sheet) {
+                display: none !important;
+            }
 
-                        .print-report-title {
-                            text-align: center !important;
-                            margin: 14px 0 12px !important;
-                        }
+            .print-report-sheet {
+                display: block !important;
+                position: static !important;
+                width: 100% !important;
+                height: auto !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: visible !important;
+                background: #ffffff !important;
+                color: #111827 !important;
+                font-family: Arial, Helvetica, sans-serif !important;
+                font-size: 10px !important;
+                line-height: 1.45 !important;
+            }
 
-                        .print-report-title h2 {
-                            font-size: 15px !important;
-                            font-weight: 900 !important;
-                            letter-spacing: 1px !important;
-                            margin: 0 0 5px !important;
-                            color: #1e3a8a !important;
-                        }
+            .print-paper {
+                width: 100% !important;
+                max-width: 100% !important;
+                height: auto !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: visible !important;
+                background: #ffffff !important;
+                color: #111827 !important;
+                font-size: 10px !important;
+                line-height: 1.45 !important;
+            }
 
-                        .print-report-title p {
-                            font-size: 9px !important;
-                            margin: 0 !important;
-                            color: #374151 !important;
-                        }
 
-                        .print-meta-grid {
-                            display: grid !important;
-                            grid-template-columns: repeat(4, 1fr) !important;
-                            border: 1px solid #cbd5e1 !important;
-                            margin-bottom: 12px !important;
-                        }
+            /* =====================================
+               INSTITUTION HEADER
+            ===================================== */
 
-                        .print-meta-grid div {
-                            padding: 7px !important;
-                            border-right: 1px solid #cbd5e1 !important;
-                        }
+            .print-header {
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 18px !important;
+                padding: 0 0 12px !important;
+                margin-bottom: 12px !important;
+                border-bottom: 3px double #1e3a8a !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
 
-                        .print-meta-grid div:last-child {
-                            border-right: 0 !important;
-                        }
+            .print-logo {
+                display: flex !important;
+                flex-shrink: 0 !important;
+                align-items: center !important;
+                justify-content: center !important;
+                width: 55px !important;
+                height: 55px !important;
+                border: 3px solid #1e3a8a !important;
+                border-radius: 50% !important;
+                color: #1e3a8a !important;
+                font-size: 18px !important;
+                font-weight: 900 !important;
+            }
 
-                        .print-meta-grid span {
-                            display: block !important;
-                            font-size: 8px !important;
-                            color: #64748b !important;
-                            margin-bottom: 4px !important;
-                        }
+            .print-header-content {
+                text-align: center !important;
+            }
 
-                        .print-meta-grid strong {
-                            display: block !important;
-                            font-size: 9px !important;
-                            color: #111827 !important;
-                            overflow-wrap: anywhere !important;
-                        }
+            .print-header-content h1 {
+                margin: 0 !important;
+                color: #172554 !important;
+                font-size: 20px !important;
+                font-weight: 900 !important;
+                letter-spacing: 1px !important;
+            }
 
-                        .print-section {
-                            margin: 12px 0 !important;
-                            break-inside: auto !important;
-                        }
+            .print-header-content h2 {
+                margin: 4px 0 !important;
+                color: #1f2937 !important;
+                font-size: 11px !important;
+                font-weight: 700 !important;
+                letter-spacing: 1px !important;
+            }
 
-                        .print-section-title {
-                            font-size: 10px !important;
-                            font-weight: 800 !important;
-                            color: #ffffff !important;
-                            background: #1e3a8a !important;
-                            padding: 6px 8px !important;
-                            margin: 0 0 5px !important;
-                            letter-spacing: 0.4px !important;
-                        }
+            .print-header-content p {
+                margin: 5px 0 0 !important;
+                color: #c2410c !important;
+                font-size: 9px !important;
+                font-weight: 700 !important;
+                letter-spacing: 2px !important;
+            }
 
-                        .print-table {
-                            width: 100% !important;
-                            border-collapse: collapse !important;
-                            font-size: 9px !important;
-                            margin: 0 0 7px !important;
-                        }
 
-                        .print-table th {
-                            background: #e8eef8 !important;
-                            color: #172554 !important;
-                            font-weight: 800 !important;
-                            text-align: left !important;
-                            border: 1px solid #cbd5e1 !important;
-                            padding: 6px 7px !important;
-                        }
+            /* =====================================
+               REPORT TITLE
+            ===================================== */
 
-                        .print-table td {
-                            border: 1px solid #cbd5e1 !important;
-                            padding: 5px 7px !important;
-                            color: #1f2937 !important;
-                            vertical-align: top !important;
-                            overflow-wrap: anywhere !important;
-                        }
+            .print-report-title {
+                margin: 14px 0 12px !important;
+                padding: 10px !important;
+                background: #f1f5f9 !important;
+                border: 1px solid #cbd5e1 !important;
+                text-align: center !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
 
-                        .print-table tbody tr:nth-child(even) {
-                            background: #f8fafc !important;
-                        }
+            .print-report-title h2 {
+                margin: 0 0 5px !important;
+                color: #1e3a8a !important;
+                font-size: 15px !important;
+                font-weight: 900 !important;
+                letter-spacing: 1px !important;
+            }
 
-                        .print-table .text-right {
-                            text-align: right !important;
-                        }
+            .print-report-title p {
+                margin: 0 !important;
+                color: #374151 !important;
+                font-size: 9px !important;
+            }
 
-                        .print-role-table {
-                            width: 55% !important;
-                            margin-top: 7px !important;
-                        }
 
-                        .print-activity-table {
-                            font-size: 8px !important;
-                        }
+            /* =====================================
+               REPORT INFORMATION / METADATA
+            ===================================== */
 
-                        .print-activity-table th,
-                        .print-activity-table td {
-                            padding: 5px !important;
-                        }
+            .print-meta-grid {
+                display: grid !important;
+                grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+                margin-bottom: 12px !important;
+                border: 1px solid #cbd5e1 !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
 
-                        .print-reference {
-                            max-width: 115px !important;
-                            overflow-wrap: anywhere !important;
-                        }
+            .print-meta-grid div {
+                min-width: 0 !important;
+                padding: 7px !important;
+                border-right: 1px solid #cbd5e1 !important;
+            }
 
-                        .print-empty {
-                            border: 1px solid #cbd5e1 !important;
-                            padding: 12px !important;
-                            font-size: 9px !important;
-                            color: #64748b !important;
-                        }
+            .print-meta-grid div:last-child {
+                border-right: 0 !important;
+            }
 
-                        .print-declaration {
-                            border: 1px solid #cbd5e1 !important;
-                            border-left: 4px solid #ea580c !important;
-                            padding: 8px 10px !important;
-                            margin-top: 15px !important;
-                            break-inside: avoid !important;
-                        }
+            .print-meta-grid span {
+                display: block !important;
+                margin-bottom: 4px !important;
+                color: #64748b !important;
+                font-size: 8px !important;
+            }
 
-                        .print-declaration strong {
-                            display: block !important;
-                            font-size: 9px !important;
-                            margin-bottom: 4px !important;
-                        }
+            .print-meta-grid strong {
+                display: block !important;
+                color: #111827 !important;
+                font-size: 9px !important;
+                overflow-wrap: anywhere !important;
+            }
 
-                        .print-declaration p {
-                            font-size: 8px !important;
-                            line-height: 1.5 !important;
-                            margin: 0 !important;
-                            color: #475569 !important;
-                        }
 
-                        .print-signature-grid {
-                            display: grid !important;
-                            grid-template-columns: repeat(3, 1fr) !important;
-                            gap: 18px !important;
-                            margin-top: 45px !important;
-                            text-align: center !important;
-                            break-inside: avoid !important;
-                        }
+            /* =====================================
+               INTRODUCTION
+            ===================================== */
 
-                        .print-signature-grid > div {
-                            display: flex !important;
-                            flex-direction: column !important;
-                            align-items: center !important;
-                            gap: 4px !important;
-                            font-size: 8px !important;
-                        }
+            .print-introduction {
+                margin: 10px 0 14px !important;
+                color: #475569 !important;
+                font-size: 9px !important;
+                line-height: 1.5 !important;
+            }
 
-                        .print-signature-line {
-                            width: 90% !important;
-                            border-top: 1px solid #475569 !important;
-                            margin-bottom: 5px !important;
-                        }
+            .print-introduction p {
+                margin: 0 !important;
+            }
 
-                        .print-signature-grid strong {
-                            font-size: 9px !important;
-                        }
 
-                        .print-signature-grid span {
-                            color: #64748b !important;
-                        }
+            /* =====================================
+               REPORT SECTIONS
+            ===================================== */
 
-                        .print-footer {
-                            display: flex !important;
-                            justify-content: space-between !important;
-                            gap: 8px !important;
-                            border-top: 1px solid #94a3b8 !important;
-                            padding-top: 7px !important;
-                            margin-top: 25px !important;
-                            font-size: 7px !important;
-                            font-weight: 700 !important;
-                            color: #64748b !important;
-                            break-inside: avoid !important;
-                        }
+            .print-section {
+                margin: 12px 0 !important;
+                break-inside: auto !important;
+                page-break-inside: auto !important;
+            }
 
-                        .print-footer span {
-                            text-align: center !important;
-                        }
+            .print-section-title {
+                margin: 0 0 5px !important;
+                padding: 7px 9px !important;
+                background: #1e3a8a !important;
+                color: #ffffff !important;
+                font-size: 10px !important;
+                font-weight: 800 !important;
+                letter-spacing: 0.4px !important;
+                break-after: avoid !important;
+                page-break-after: avoid !important;
+            }
 
-                        .print-table tr {
-                            break-inside: avoid !important;
-                        }
+            .print-section-description {
+                margin: 4px 0 7px !important;
+                color: #64748b !important;
+                font-size: 8px !important;
+                line-height: 1.4 !important;
+            }
 
-                        .no-print,
-                        button {
-                            display: none !important;
-                        }
-                    }
-                `}
-            </style>
+
+            /* =====================================
+               REPORT TABLES
+            ===================================== */
+
+            .print-table {
+                width: 100% !important;
+                margin: 0 0 7px !important;
+                border-collapse: collapse !important;
+                table-layout: auto !important;
+                font-size: 9px !important;
+            }
+
+            .print-table thead {
+                display: table-header-group !important;
+            }
+
+            .print-table tfoot {
+                display: table-footer-group !important;
+            }
+
+            .print-table th {
+                padding: 6px 7px !important;
+                background: #e8eef8 !important;
+                color: #172554 !important;
+                font-weight: 800 !important;
+                text-align: left !important;
+                border: 1px solid #cbd5e1 !important;
+            }
+
+            .print-table td {
+                padding: 5px 7px !important;
+                color: #1f2937 !important;
+                vertical-align: top !important;
+                border: 1px solid #cbd5e1 !important;
+                overflow-wrap: anywhere !important;
+            }
+
+            .print-table tbody tr:nth-child(even) {
+                background: #f8fafc !important;
+            }
+
+            .print-table .text-right {
+                text-align: right !important;
+            }
+
+            .print-table tr {
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+
+            .print-role-table {
+                width: 55% !important;
+                margin-top: 7px !important;
+            }
+
+            .print-activity-table {
+                font-size: 8px !important;
+            }
+
+            .print-activity-table th,
+            .print-activity-table td {
+                padding: 5px !important;
+            }
+
+            .print-reference {
+                max-width: 115px !important;
+                overflow-wrap: anywhere !important;
+            }
+
+            .print-empty {
+                padding: 12px !important;
+                border: 1px solid #cbd5e1 !important;
+                color: #64748b !important;
+                font-size: 9px !important;
+            }
+
+
+            /* =====================================
+               AUDIT DECLARATION
+            ===================================== */
+
+            .print-declaration {
+                margin-top: 15px !important;
+                padding: 9px 11px !important;
+                border: 1px solid #cbd5e1 !important;
+                border-left: 4px solid #ea580c !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+
+            .print-declaration strong {
+                display: block !important;
+                margin-bottom: 4px !important;
+                color: #172554 !important;
+                font-size: 9px !important;
+            }
+
+            .print-declaration p {
+                margin: 0 !important;
+                color: #475569 !important;
+                font-size: 8px !important;
+                line-height: 1.5 !important;
+            }
+
+
+            /* =====================================
+               SIGNATURE SECTION
+            ===================================== */
+
+            .print-signature-heading {
+                margin-top: 28px !important;
+                padding-bottom: 7px !important;
+                border-bottom: 1px solid #cbd5e1 !important;
+                color: #1e3a8a !important;
+                font-size: 10px !important;
+                font-weight: 800 !important;
+                text-align: center !important;
+                break-after: avoid !important;
+                page-break-after: avoid !important;
+            }
+
+            .print-signature-grid {
+                display: grid !important;
+                grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+                gap: 18px !important;
+                margin: 42px 0 18px !important;
+                text-align: center !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+
+            .print-signature-grid > div {
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                gap: 5px !important;
+                min-width: 0 !important;
+                font-size: 8px !important;
+            }
+
+            .print-signature-line {
+                width: 90% !important;
+                margin: 15px 0 5px !important;
+                border-top: 1px solid #475569 !important;
+            }
+
+            .print-signature-grid strong {
+                color: #111827 !important;
+                font-size: 9px !important;
+            }
+
+            .print-signature-grid span {
+                color: #64748b !important;
+            }
+
+
+            /* =====================================
+               REPORT FOOTER
+            ===================================== */
+
+            .print-footer {
+                display: flex !important;
+                justify-content: space-between !important;
+                gap: 8px !important;
+                margin-top: 20px !important;
+                padding-top: 7px !important;
+                border-top: 1px solid #94a3b8 !important;
+                color: #64748b !important;
+                font-size: 7px !important;
+                font-weight: 700 !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+
+            .print-footer span {
+                text-align: center !important;
+            }
+
+
+            /* =====================================
+               PAGE BREAK & PRINT CLEANUP
+            ===================================== */
+
+            .print-section-title,
+            .print-table th {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            .print-report-sheet p {
+                orphans: 3;
+                widows: 3;
+            }
+
+            .no-print,
+            button {
+                display: none !important;
+            }
+        }
+    `}
+</style>
+
         </div>
     );
 };

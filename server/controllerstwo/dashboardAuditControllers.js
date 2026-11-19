@@ -18,13 +18,31 @@ import User from '../models/User.js';
 
 // BANGLADESH DATE HELPER
 const getDhakaDate = () => {
-    return new Date(Date.now() + (6 * 60 * 60 * 1000));
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Dhaka',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(new Date());
+
+    const year = parts.find(part => part.type === 'year').value;
+    const month = parts.find(part => part.type === 'month').value;
+    const day = parts.find(part => part.type === 'day').value;
+
+    return `${year}-${month}-${day}`;
 };
 
 const formatDate = (date) => {
-    const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(date.getUTCDate()).padStart(2, '0');
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Dhaka',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(date);
+
+    const year = parts.find(part => part.type === 'year').value;
+    const month = parts.find(part => part.type === 'month').value;
+    const day = parts.find(part => part.type === 'day').value;
 
     return `${year}-${month}-${day}`;
 };
@@ -62,29 +80,44 @@ const getReportDateRange = (period, dateFrom, dateTo) => {
         endDate.setUTCDate(endDate.getUTCDate() + 1);
 
     } else if (period === 'week') {
-        const currentDay = today.getUTCDay();
+        // GET CURRENT BANGLADESH DATE
+        const todayDate = new Date(`${today}T00:00:00Z`);
+
+        const currentDay = todayDate.getUTCDay();
         const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1;
 
-        startDate = new Date(today);
-        startDate.setUTCHours(0, 0, 0, 0);
-        startDate.setUTCDate(startDate.getUTCDate() - daysFromMonday);
+        // FIND MONDAY DATE
+        const mondayDate = new Date(todayDate);
+
+        mondayDate.setUTCDate(
+            mondayDate.getUTCDate() - daysFromMonday
+        );
+
+        const mondayString = formatDate(mondayDate);
+
+        // BANGLADESH LOCAL MIDNIGHT
+        startDate = new Date(`${mondayString}T00:00:00+06:00`);
 
         endDate = new Date(startDate);
         endDate.setUTCDate(endDate.getUTCDate() + 7);
 
     } else {
-        startDate = new Date(Date.UTC(
-            today.getUTCFullYear(),
-            today.getUTCMonth(),
-            1
-        ));
+        // CURRENT BANGLADESH YEAR AND MONTH
+        const [year, month] = today.split('-').map(Number);
 
-        endDate = new Date(Date.UTC(
-            today.getUTCFullYear(),
-            today.getUTCMonth() + 1,
-            1
-        ));
+        const firstDay = `${year}-${String(month).padStart(2, '0')}-01`;
 
+        // NEXT MONTH FIRST DAY
+        const nextMonthDate = new Date(
+            Date.UTC(year, month, 1)
+        );
+
+        const nextMonthString = formatDate(nextMonthDate);
+
+        // BANGLADESH LOCAL MIDNIGHT
+        startDate = new Date(`${firstDay}T00:00:00+06:00`);
+
+        endDate = new Date(`${nextMonthString}T00:00:00+06:00`);
     }
 
     return {
@@ -229,7 +262,7 @@ export const getDashboardAudit = async (req, res) => {
                 }
             ]),
 
-            // ASSIGNMENT HISTORY
+            // ASSIGNMENT HISTORY - MULTIPLE PRODUCTS
             Assignment.aggregate([
                 {
                     $match: dateFilter(
@@ -242,7 +275,15 @@ export const getDashboardAudit = async (req, res) => {
                     $group: {
                         _id: null,
                         totalAssignments: { $sum: 1 },
-                        totalQuantity: { $sum: '$quantity' }
+
+                        // SUM QUANTITY FROM ALL PRODUCTS
+                        totalQuantity: {
+                            $sum: {
+                                $sum: {
+                                    $ifNull: ['$items.quantity', []]
+                                }
+                            }
+                        }
                     }
                 }
             ]),
@@ -492,10 +533,13 @@ export const getDashboardAudit = async (req, res) => {
                 .limit(30)
                 .lean(),
 
+            // MULTI-PRODUCT ASSIGNMENT HISTORY
             Assignment.find(
                 dateFilter('assignedDate', startDate, endDate)
             )
-                .populate('stockItem', 'name sku')
+                .populate('items.stockItem', 'name sku')
+                .populate('items.stockUnits', 'unitCode serialNumber status')
+                .populate('items.assets', 'assetId serialNumber status')
                 .populate('department', 'name')
                 .populate('room', 'name roomNumber')
                 .sort({ assignedDate: -1 })
@@ -553,11 +597,36 @@ export const getDashboardAudit = async (req, res) => {
             });
         });
 
+        // MULTI-PRODUCT ASSIGNMENT ACTIVITIES
         assignments.forEach(item => {
+
+            const assignmentItems = Array.isArray(item.items)
+                ? item.items
+                : [];
+
+            const totalAssignedQuantity = assignmentItems.reduce(
+                (total, product) => total + (Number(product.quantity) || 0),
+                0
+            );
+
+            const productNames = assignmentItems
+                .map(product =>
+                    product.stockItem?.name ||
+                    product.productDetails?.name
+                )
+                .filter(Boolean);
+
+            const uniqueProductNames = [...new Set(productNames)];
+
             activities.push({
                 type: 'Assignment',
-                title: item.stockItem?.name || 'Stock Item',
-                description: `${item.quantity} unit(s) assigned`,
+
+                title: uniqueProductNames.length
+                    ? uniqueProductNames.join(', ')
+                    : 'Stock Items',
+
+                description: `${totalAssignedQuantity} unit(s) assigned across ${assignmentItems.length} product type(s)`,
+
                 reference: item.assignmentId,
                 date: item.assignedDate,
                 user: item.receiver?.name || 'System',

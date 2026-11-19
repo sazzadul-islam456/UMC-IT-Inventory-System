@@ -8,6 +8,9 @@ const STOCK_API_URL = 'http://localhost:3001/api/stock';
 const DEPARTMENT_API_URL = 'http://localhost:3001/api/departments';
 const ROOM_API_URL = 'http://localhost:3001/api/rooms';
 
+const MAX_ASSIGNMENT_PRODUCTS = 20;
+const LOW_STOCK_THRESHOLD = 5;
+
 // GET AUTH HEADERS
 const getHeaders = () => {
     const token = localStorage.getItem('pos-token');
@@ -31,6 +34,52 @@ const formatDate = (date) => {
         month: 'short',
         year: 'numeric'
     });
+};
+
+// GET ASSIGNMENT ITEMS (NEW + OLD RECORD COMPATIBILITY)
+const getAssignmentItems = (assignment) => {
+    if (Array.isArray(assignment?.items) && assignment.items.length > 0) {
+        return assignment.items;
+    }
+
+    if (assignment?.stockItem || assignment?.productDetails) {
+        return [{
+            stockItem: assignment.stockItem,
+            productDetails: assignment.productDetails,
+            quantity: assignment.quantity || 0,
+            stockUnits: assignment.stockUnits || [],
+            assets: assignment.assets || []
+        }];
+    }
+
+    return [];
+};
+
+// GET TOTAL ASSIGNED QUANTITY
+const getAssignmentQuantity = (assignment) => {
+    return getAssignmentItems(assignment).reduce(
+        (total, item) => total + Number(
+            item.quantity ||
+            item.stockUnits?.length ||
+            item.assets?.length ||
+            0
+        ),
+        0
+    );
+};
+
+// GET PRODUCT NAME
+const getProductName = (item) => {
+    return item.productDetails?.name ||
+        item.stockItem?.name ||
+        'N/A';
+};
+
+// GET PRODUCT SUMMARY
+const getAssignmentProductNames = (assignment) => {
+    const items = getAssignmentItems(assignment);
+
+    return items.map(item => getProductName(item)).join(', ') || 'N/A';
 };
 
 // REUSABLE STAT CARD
@@ -78,6 +127,10 @@ const AssignmentManagement = () => {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [loadingUnits, setLoadingUnits] = useState(false);
+    const [loadingProductIds, setLoadingProductIds] = useState([]);
+
+    // STOCK UNIT CACHE
+    const stockUnitsCache = useRef({});
 
     // ERROR AND SUCCESS
     const [error, setError] = useState('');
@@ -100,9 +153,16 @@ const AssignmentManagement = () => {
         notes: ''
     });
 
-    // SELECTED STOCK UNITS
+    // CURRENT PRODUCT STOCK UNITS
     const [availableUnits, setAvailableUnits] = useState([]);
     const [selectedUnitIds, setSelectedUnitIds] = useState([]);
+
+    // PRODUCTS ADDED TO CURRENT ASSIGNMENT
+    const [assignmentProducts, setAssignmentProducts] = useState([]);
+
+    // PRODUCT SEARCH AND STOCK FILTERS
+    const [productSearchTerm, setProductSearchTerm] = useState('');
+    const [productStockFilter, setProductStockFilter] = useState('All');
 
     // HISTORY FILTERS
     const [searchTerm, setSearchTerm] = useState('');
@@ -122,15 +182,6 @@ const AssignmentManagement = () => {
     // PRINT
     const [printAssignment, setPrintAssignment] = useState(null);
     const originalDocumentTitle = useRef('');
-
-    // SELECTED PRODUCT
-    const selectedProduct = stockItems.find(
-        item => item._id === formData.stockItemId
-    );
-
-    const availableQuantity = Number(
-        selectedProduct?.availableQuantity || 0
-    );
 
     // SELECTED DEPARTMENT ROOMS
     const departmentRooms = rooms.filter(room => {
@@ -156,6 +207,86 @@ const AssignmentManagement = () => {
     const availableRooms = departmentRooms.filter(
         room => room.floorLevel?.trim() === formData.floorLevel
     );
+
+    // RECEIVER INFORMATION COMPLETION
+    const receiverInfoComplete = Boolean(
+        formData.departmentId &&
+        formData.receiver.name.trim() &&
+        formData.assignedDate &&
+        (
+            formData.assignmentType !== 'Room' ||
+            (formData.floorLevel && formData.roomId)
+        )
+    );
+
+    // CURRENT ASSIGNMENT TOTALS
+    const totalSelectedDevices = assignmentProducts.reduce(
+        (total, item) => total + Number(item.quantity || 0),
+        0
+    );
+
+    // PRODUCT STOCK COUNTS
+    const productStockCounts = useMemo(() => {
+        return stockItems.reduce((counts, product) => {
+            const availableQuantity = Math.max(
+                0,
+                Number(product.availableQuantity || 0)
+            );
+
+            counts.all += 1;
+
+            if (availableQuantity === 0) {
+                counts.outOfStock += 1;
+            } else if (availableQuantity <= LOW_STOCK_THRESHOLD) {
+                counts.lowStock += 1;
+            } else {
+                counts.inStock += 1;
+            }
+
+            return counts;
+        }, {
+            all: 0,
+            inStock: 0,
+            lowStock: 0,
+            outOfStock: 0
+        });
+    }, [stockItems]);
+
+    // FILTER PRODUCTS BY SEARCH AND STOCK STATUS
+    const filteredStockItems = useMemo(() => {
+        const search = productSearchTerm.trim().toLowerCase();
+
+        return stockItems.filter(product => {
+            const availableQuantity = Math.max(
+                0,
+                Number(product.availableQuantity || 0)
+            );
+
+            const matchesSearch = !search || [
+                product.name,
+                product.sku,
+                product.brand,
+                product.model
+            ].some(value =>
+                String(value || '').toLowerCase().includes(search)
+            );
+
+            let matchesStockFilter = true;
+
+            if (productStockFilter === 'In Stock') {
+                matchesStockFilter =
+                    availableQuantity > LOW_STOCK_THRESHOLD;
+            } else if (productStockFilter === 'Low Stock') {
+                matchesStockFilter =
+                    availableQuantity > 0 &&
+                    availableQuantity <= LOW_STOCK_THRESHOLD;
+            } else if (productStockFilter === 'Out of Stock') {
+                matchesStockFilter = availableQuantity === 0;
+            }
+
+            return matchesSearch && matchesStockFilter;
+        });
+    }, [stockItems, productSearchTerm, productStockFilter]);
 
     // LOAD STOCK
     const fetchStockItems = async () => {
@@ -304,73 +435,213 @@ const AssignmentManagement = () => {
                 phone: ''
             }
         }));
+
+        setAssignmentProducts([]);
+        setError('');
+        setSuccess('');
     };
 
-    // PRODUCT CHANGE
-    const handleProductChange = async (e) => {
-        const stockItemId = e.target.value;
+    // GET AVAILABLE STOCK UNITS
+    const fetchAvailableProductUnits = async (product) => {
+        const productId = product._id;
 
-        setFormData(prev => ({
-            ...prev,
-            stockItemId
-        }));
+        if (stockUnitsCache.current[productId]) {
+            return stockUnitsCache.current[productId];
+        }
 
-        setAvailableUnits([]);
-        setSelectedUnitIds([]);
+        const response = await fetch(
+            `${STOCK_API_URL}/${productId}/units`,
+            {
+                headers: getHeaders()
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to load product devices');
+        }
+
+        const units = Array.isArray(data)
+            ? data
+            : data.units || data.stockUnits || data.items || [];
+
+        const available = units.filter(unit =>
+            unit.status === 'Available' &&
+            unit.asset == null
+        );
+
+        stockUnitsCache.current[productId] = available;
+
+        return available;
+    };
+
+    // UPDATE PRODUCT QUANTITY
+    const handleProductQuantityChange = async (product, rawQuantity) => {
         setError('');
+        setSuccess('');
 
-        if (!stockItemId) return;
+        const availableQuantity = Math.max(
+            0,
+            Number(product.availableQuantity || 0)
+        );
 
+        const parsedQuantity = Number.parseInt(rawQuantity, 10);
+
+        const quantity = Number.isNaN(parsedQuantity)
+            ? 0
+            : Math.min(
+                Math.max(parsedQuantity, 0),
+                availableQuantity
+            );
+
+        const existingProduct = assignmentProducts.find(
+            item => item.stockItemId === product._id
+        );
+
+        // ZERO QUANTITY REMOVES PRODUCT
+        if (quantity === 0) {
+            setAssignmentProducts(prev =>
+                prev.filter(item => item.stockItemId !== product._id)
+            );
+
+            return;
+        }
+
+        // MAXIMUM PRODUCT LIMIT
+        if (
+            !existingProduct &&
+            assignmentProducts.length >= MAX_ASSIGNMENT_PRODUCTS
+        ) {
+            setError(
+                `You can assign a maximum of ${MAX_ASSIGNMENT_PRODUCTS} different products at once.`
+            );
+            return;
+        }
+
+        // PREVENT MULTIPLE REQUESTS FOR SAME PRODUCT
+        if (loadingProductIds.includes(product._id)) {
+            return;
+        }
+
+        setLoadingProductIds(prev => [...prev, product._id]);
         setLoadingUnits(true);
 
         try {
-            const response = await fetch(
-                `${STOCK_API_URL}/${stockItemId}/units`,
-                {
-                    headers: getHeaders()
-                }
-            );
+            const available = await fetchAvailableProductUnits(product);
 
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.message || 'Failed to load product devices');
+            // REAL STOCK UNIT LIMIT
+            if (quantity > available.length) {
+                setError(
+                    `${product.name}: Only ${available.length} individually tracked stock units are available.`
+                );
             }
 
-            const units = Array.isArray(data)
-                ? data
-                : data.units || data.stockUnits || data.items || [];
+            const finalQuantity = Math.min(quantity, available.length);
 
-            const available = units.filter(unit =>
-                unit.status === 'Available' &&
-                unit.asset == null
+            if (finalQuantity === 0) {
+                setAssignmentProducts(prev =>
+                    prev.filter(item => item.stockItemId !== product._id)
+                );
+
+                return;
+            }
+
+            // RESTORE PREVIOUS SELECTED UNITS
+            const previousIds = existingProduct?.stockUnitIds || [];
+
+            const selectedIds = previousIds.filter(id =>
+                available.some(unit => unit._id === id)
+            ).slice(0, finalQuantity);
+
+            // ADD MORE UNITS IF QUANTITY INCREASES
+            const remainingUnits = available.filter(unit =>
+                !selectedIds.includes(unit._id)
             );
 
-            setAvailableUnits(available);
+            while (
+                selectedIds.length < finalQuantity &&
+                remainingUnits.length > 0
+            ) {
+                selectedIds.push(remainingUnits.shift()._id);
+            }
+
+            const selectedUnits = available.filter(unit =>
+                selectedIds.includes(unit._id)
+            );
+
+            const productData = {
+                stockItemId: product._id,
+                productDetails: {
+                    name: product.name,
+                    brand: product.brand || '',
+                    model: product.model || '',
+                    sku: product.sku || ''
+                },
+                quantity: selectedIds.length,
+                stockUnitIds: selectedIds,
+                units: selectedUnits
+            };
+
+            setAssignmentProducts(prev => {
+                const existingIndex = prev.findIndex(
+                    item => item.stockItemId === product._id
+                );
+
+                if (existingIndex !== -1) {
+                    return prev.map((item, index) =>
+                        index === existingIndex ? productData : item
+                    );
+                }
+
+                if (prev.length >= MAX_ASSIGNMENT_PRODUCTS) {
+                    return prev;
+                }
+
+                return [...prev, productData];
+            });
 
         } catch (err) {
             setError(err.message);
         } finally {
+            setLoadingProductIds(prev =>
+                prev.filter(id => id !== product._id)
+            );
+
             setLoadingUnits(false);
         }
     };
 
-    // SELECT / DESELECT STOCK UNIT
-    const handleUnitSelection = (unitId) => {
-        setSelectedUnitIds(prev =>
-            prev.includes(unitId)
-                ? prev.filter(id => id !== unitId)
-                : [...prev, unitId]
+    // INCREASE PRODUCT QUANTITY
+    const handleIncreaseQuantity = (product) => {
+        const current = assignmentProducts.find(
+            item => item.stockItemId === product._id
         );
+
+        const nextQuantity = (current?.quantity || 0) + 1;
+
+        handleProductQuantityChange(product, nextQuantity);
     };
 
-    // SELECT ALL AVAILABLE UNITS
-    const handleSelectAllUnits = () => {
-        if (selectedUnitIds.length === availableUnits.length) {
-            setSelectedUnitIds([]);
-        } else {
-            setSelectedUnitIds(availableUnits.map(unit => unit._id));
-        }
+    // DECREASE PRODUCT QUANTITY
+    const handleDecreaseQuantity = (product) => {
+        const current = assignmentProducts.find(
+            item => item.stockItemId === product._id
+        );
+
+        const nextQuantity = Math.max(
+            0,
+            (current?.quantity || 0) - 1
+        );
+
+        handleProductQuantityChange(product, nextQuantity);
+    };
+
+    // REMOVE PRODUCT FROM ASSIGNMENT
+    const handleRemoveProduct = (stockItemId) => {
+        setAssignmentProducts(prev =>
+            prev.filter(item => item.stockItemId !== stockItemId)
+        );
     };
 
     // RESET ASSIGNMENT FORM
@@ -393,17 +664,32 @@ const AssignmentManagement = () => {
 
         setAvailableUnits([]);
         setSelectedUnitIds([]);
+        setAssignmentProducts([]);
+        setLoadingProductIds([]);
+        setProductSearchTerm('');
+        setProductStockFilter('All');
+        stockUnitsCache.current = {};
     };
 
-    // CREATE ASSIGNMENT
+    // CREATE BULK ASSIGNMENT
     const handleCreateAssignment = async (e) => {
         e.preventDefault();
 
         setError('');
         setSuccess('');
 
-        if (!formData.stockItemId) {
-            setError('Please select a stock product.');
+        if (!receiverInfoComplete) {
+            setError('Please complete the department, receiver and assignment information.');
+            return;
+        }
+
+        if (assignmentProducts.length < 1) {
+            setError('Please select at least one product.');
+            return;
+        }
+
+        if (assignmentProducts.length > MAX_ASSIGNMENT_PRODUCTS) {
+            setError(`A maximum of ${MAX_ASSIGNMENT_PRODUCTS} products can be assigned at once.`);
             return;
         }
 
@@ -425,17 +711,41 @@ const AssignmentManagement = () => {
             return;
         }
 
-        if (selectedUnitIds.length < 1) {
-            setError('Please select at least one device with its serial number.');
+        if (!formData.assignedDate) {
+            setError('Please select assignment date.');
             return;
         }
 
-        if (selectedUnitIds.length > availableQuantity) {
-            setError(`Only ${availableQuantity} devices are available.`);
+        const productIds = assignmentProducts.map(item => item.stockItemId);
+
+        if (new Set(productIds).size !== productIds.length) {
+            setError('Duplicate products are not allowed in one assignment.');
             return;
         }
 
-        const quantity = selectedUnitIds.length;
+        const hasInvalidProduct = assignmentProducts.some(item =>
+            !item.stockItemId ||
+            !Array.isArray(item.stockUnitIds) ||
+            item.stockUnitIds.length < 1 ||
+            item.quantity !== item.stockUnitIds.length
+        );
+
+        if (hasInvalidProduct) {
+            setError(
+                'Every product must have at least one selected stock unit.'
+            );
+            return;
+        }
+
+        // CHECK DUPLICATE STOCK UNIT IDS ACROSS PRODUCTS
+        const allUnitIds = assignmentProducts.flatMap(
+            item => item.stockUnitIds
+        );
+
+        if (new Set(allUnitIds).size !== allUnitIds.length) {
+            setError('A stock unit cannot be selected more than once.');
+            return;
+        }
 
         setSubmitting(true);
 
@@ -445,12 +755,14 @@ const AssignmentManagement = () => {
                 headers: getHeaders(),
                 body: JSON.stringify({
                     assignmentType: formData.assignmentType,
-                    stockItemId: formData.stockItemId,
+                    items: assignmentProducts.map(item => ({
+                        stockItemId: item.stockItemId,
+                        stockUnitIds: item.stockUnitIds
+                    })),
                     departmentId: formData.departmentId,
                     roomId: formData.assignmentType === 'Room'
                         ? formData.roomId
                         : null,
-                    stockUnitIds: selectedUnitIds,
                     assignedDate: formData.assignedDate,
                     receiver: {
                         name: formData.receiver.name.trim(),
@@ -469,7 +781,7 @@ const AssignmentManagement = () => {
             }
 
             setSuccess(
-                data.message || 'Assignment created successfully!'
+                data.message || 'Combined assignment created successfully!'
             );
 
             resetAssignmentForm();
@@ -492,7 +804,7 @@ const AssignmentManagement = () => {
     const totalAssignments = assignments.length;
 
     const totalAssignedDevices = assignments.reduce(
-        (total, item) => total + Number(item.quantity || 0),
+        (total, item) => total + getAssignmentQuantity(item),
         0
     );
 
@@ -512,12 +824,19 @@ const AssignmentManagement = () => {
     const filteredAssignments = useMemo(() => {
         return assignments.filter(item => {
             const search = searchTerm.toLowerCase();
+            const productItems = getAssignmentItems(item);
+
+            const productMatches = productItems.some(product => (
+                getProductName(product).toLowerCase().includes(search) ||
+                (product.productDetails?.sku || product.stockItem?.sku || '')
+                    .toLowerCase().includes(search)
+            ));
 
             const matchesSearch =
                 (item.assignmentId || '').toLowerCase().includes(search) ||
                 (item.receiver?.name || '').toLowerCase().includes(search) ||
                 (item.receiver?.employeeId || '').toLowerCase().includes(search) ||
-                (item.productDetails?.name || item.stockItem?.name || '').toLowerCase().includes(search) ||
+                productMatches ||
                 (item.department?.name || '').toLowerCase().includes(search) ||
                 (item.room?.roomNumber || '').toLowerCase().includes(search) ||
                 (item.room?.floorLevel || '').toLowerCase().includes(search) ||
@@ -553,6 +872,9 @@ const AssignmentManagement = () => {
     const reportAssignments = useMemo(() => {
         return assignments.filter(item => {
             const date = new Date(item.assignedDate);
+
+            if (Number.isNaN(date.getTime())) return false;
+
             const dateString = date.toISOString().split('T')[0];
 
             if (reportType === 'Daily') {
@@ -577,7 +899,7 @@ const AssignmentManagement = () => {
     ]);
 
     const reportQuantity = reportAssignments.reduce(
-        (total, item) => total + Number(item.quantity || 0),
+        (total, item) => total + getAssignmentQuantity(item),
         0
     );
 
@@ -1078,7 +1400,7 @@ const AssignmentManagement = () => {
                                                     <thead>
                                                         <tr className="border-b border-slate-100 text-xs text-slate-400 uppercase">
                                                             <th className="py-3 px-3">Assignment ID</th>
-                                                            <th className="py-3 px-3">Product</th>
+                                                            <th className="py-3 px-3">Products</th>
                                                             <th className="py-3 px-3">Department</th>
                                                             <th className="py-3 px-3">Location</th>
                                                             <th className="py-3 px-3">Receiver</th>
@@ -1094,8 +1416,13 @@ const AssignmentManagement = () => {
                                                                     {item.assignmentId}
                                                                 </td>
 
-                                                                <td className="py-4 px-3 text-sm font-semibold text-slate-700">
-                                                                    {item.productDetails?.name || item.stockItem?.name || 'N/A'}
+                                                                <td className="py-4 px-3 text-sm font-semibold text-slate-700 max-w-[250px]">
+                                                                    <div className="line-clamp-2">
+                                                                        {getAssignmentProductNames(item)}
+                                                                    </div>
+                                                                    <p className="text-[10px] text-slate-400 mt-1">
+                                                                        {getAssignmentItems(item).length} Product Types
+                                                                    </p>
                                                                 </td>
 
                                                                 <td className="py-4 px-3 text-sm text-slate-600">
@@ -1113,7 +1440,7 @@ const AssignmentManagement = () => {
                                                                 </td>
 
                                                                 <td className="py-4 px-3 text-sm font-bold text-slate-700">
-                                                                    {item.quantity}
+                                                                    {getAssignmentQuantity(item)}
                                                                 </td>
 
                                                                 <td className="py-4 px-3 text-xs text-slate-500">
@@ -1157,338 +1484,59 @@ const AssignmentManagement = () => {
 
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleAssignmentTypeChange('Department')}
-                                                    className={`p-5 rounded-2xl border-2 text-left transition ${
-                                                        formData.assignmentType === 'Department'
-                                                            ? 'border-blue-500 bg-blue-50'
-                                                            : 'border-slate-200 hover:border-blue-200'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-3xl">🏢</span>
-
-                                                        <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                                                            formData.assignmentType === 'Department'
-                                                                ? 'border-blue-600'
-                                                                : 'border-slate-300'
-                                                        }`}>
-                                                            {formData.assignmentType === 'Department' && (
-                                                                <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-                                                            )}
-                                                        </span>
-                                                    </div>
-
-                                                    <h3 className="font-bold text-slate-800 mt-4">
-                                                        Department Assignment
-                                                    </h3>
-
-                                                    <p className="text-xs text-slate-500 mt-2 leading-5">
-                                                        Assign equipment to a department through its receiving representative.
-                                                    </p>
-                                                </button>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleAssignmentTypeChange('Individual')}
-                                                    className={`p-5 rounded-2xl border-2 text-left transition ${
-                                                        formData.assignmentType === 'Individual'
-                                                            ? 'border-blue-500 bg-blue-50'
-                                                            : 'border-slate-200 hover:border-blue-200'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-3xl">👤</span>
-
-                                                        <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                                                            formData.assignmentType === 'Individual'
-                                                                ? 'border-blue-600'
-                                                                : 'border-slate-300'
-                                                        }`}>
-                                                            {formData.assignmentType === 'Individual' && (
-                                                                <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-                                                            )}
-                                                        </span>
-                                                    </div>
-
-                                                    <h3 className="font-bold text-slate-800 mt-4">
-                                                        Individual Assignment
-                                                    </h3>
-
-                                                    <p className="text-xs text-slate-500 mt-2 leading-5">
-                                                        Assign equipment directly to a specific employee under a department.
-                                                    </p>
-                                                </button>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleAssignmentTypeChange('Room')}
-                                                    className={`p-5 rounded-2xl border-2 text-left transition ${
-                                                        formData.assignmentType === 'Room'
-                                                            ? 'border-blue-500 bg-blue-50'
-                                                            : 'border-slate-200 hover:border-blue-200'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-3xl">🚪</span>
-
-                                                        <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                                                            formData.assignmentType === 'Room'
-                                                                ? 'border-blue-600'
-                                                                : 'border-slate-300'
-                                                        }`}>
-                                                            {formData.assignmentType === 'Room' && (
-                                                                <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-                                                            )}
-                                                        </span>
-                                                    </div>
-
-                                                    <h3 className="font-bold text-slate-800 mt-4">
-                                                        Room Assignment
-                                                    </h3>
-
-                                                    <p className="text-xs text-slate-500 mt-2 leading-5">
-                                                        Assign equipment to a specific room with floor level and room number.
-                                                    </p>
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {/* PRODUCT INFORMATION */}
-                                        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-7">
-
-                                            <div className="mb-6">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="w-2 h-6 rounded-full bg-orange-500" />
-
-                                                    <h2 className="text-lg font-bold text-slate-800">
-                                                        Product Information
-                                                    </h2>
-                                                </div>
-
-                                                <p className="text-xs text-slate-400 mt-2 ml-4">
-                                                    Select a product and choose its exact serial numbers
-                                                </p>
-                                            </div>
-
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
-                                                <div className="md:col-span-2">
-                                                    {renderLabel('Select Product', true)}
-
-                                                    <select
-                                                        name="stockItemId"
-                                                        value={formData.stockItemId}
-                                                        onChange={handleProductChange}
-                                                        className={inputClass}
-                                                        required
+                                                {[
+                                                    {
+                                                        type: 'Department',
+                                                        icon: '🏢',
+                                                        title: 'Department Assignment',
+                                                        description: 'Assign equipment to a department through its receiving representative.'
+                                                    },
+                                                    {
+                                                        type: 'Individual',
+                                                        icon: '👤',
+                                                        title: 'Individual Assignment',
+                                                        description: 'Assign equipment directly to a specific employee under a department.'
+                                                    },
+                                                    {
+                                                        type: 'Room',
+                                                        icon: '🚪',
+                                                        title: 'Room Assignment',
+                                                        description: 'Assign equipment to a specific room with floor level and room number.'
+                                                    }
+                                                ].map(option => (
+                                                    <button
+                                                        key={option.type}
+                                                        type="button"
+                                                        onClick={() => handleAssignmentTypeChange(option.type)}
+                                                        className={`p-5 rounded-2xl border-2 text-left transition ${
+                                                            formData.assignmentType === option.type
+                                                                ? 'border-blue-500 bg-blue-50'
+                                                                : 'border-slate-200 hover:border-blue-200'
+                                                        }`}
                                                     >
-                                                        <option value="">Choose a stock product</option>
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-3xl">{option.icon}</span>
 
-                                                        {stockItems.map(item => (
-                                                            <option
-                                                                key={item._id}
-                                                                value={item._id}
-                                                                disabled={Number(item.availableQuantity || 0) < 1}
-                                                            >
-                                                                {item.name}
-                                                                {item.brand ? ` - ${item.brand}` : ''}
-                                                                {item.sku ? ` (${item.sku})` : ''}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                            </div>
+                                                            <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                                                                formData.assignmentType === option.type
+                                                                    ? 'border-blue-600'
+                                                                    : 'border-slate-300'
+                                                            }`}>
+                                                                {formData.assignmentType === option.type && (
+                                                                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+                                                                )}
+                                                            </span>
+                                                        </div>
 
-                                            {selectedProduct && (
-                                                <div className="mt-5 p-5 rounded-xl bg-blue-50 border border-blue-100">
-
-                                                    <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-                                                        <h3 className="font-bold text-blue-900">
-                                                            Selected Product Details
+                                                        <h3 className="font-bold text-slate-800 mt-4">
+                                                            {option.title}
                                                         </h3>
 
-                                                        <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                                                            {availableQuantity} Available in Stock
-                                                        </span>
-                                                    </div>
-
-                                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-
-                                                        <div>
-                                                            <p className="text-[10px] uppercase text-slate-400 font-bold">
-                                                                Product
-                                                            </p>
-
-                                                            <p className="text-sm font-semibold text-slate-700 mt-1">
-                                                                {selectedProduct.name}
-                                                            </p>
-                                                        </div>
-
-                                                        <div>
-                                                            <p className="text-[10px] uppercase text-slate-400 font-bold">
-                                                                Brand
-                                                            </p>
-
-                                                            <p className="text-sm font-semibold text-slate-700 mt-1">
-                                                                {selectedProduct.brand || 'N/A'}
-                                                            </p>
-                                                        </div>
-
-                                                        <div>
-                                                            <p className="text-[10px] uppercase text-slate-400 font-bold">
-                                                                Model
-                                                            </p>
-
-                                                            <p className="text-sm font-semibold text-slate-700 mt-1">
-                                                                {selectedProduct.model || 'N/A'}
-                                                            </p>
-                                                        </div>
-
-                                                        <div>
-                                                            <p className="text-[10px] uppercase text-slate-400 font-bold">
-                                                                SKU
-                                                            </p>
-
-                                                            <p className="text-sm font-semibold text-slate-700 mt-1">
-                                                                {selectedProduct.sku || 'N/A'}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="mt-4 pt-4 border-t border-blue-100 flex justify-between items-center">
-                                                        <span className="text-xs text-slate-500">
-                                                            Available stock after assignment
-                                                        </span>
-
-                                                        <span className="text-sm font-bold text-blue-700">
-                                                            {Math.max(
-                                                                availableQuantity - selectedUnitIds.length,
-                                                                0
-                                                            )} Units
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* SERIAL NUMBER SELECTION */}
-                                            <div className="mt-6">
-
-                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-
-                                                    <div>
-                                                        {renderLabel('Select Devices / Serial Numbers', true)}
-
-                                                        <p className="text-xs text-slate-400">
-                                                            Select the exact devices you want to assign.
+                                                        <p className="text-xs text-slate-500 mt-2 leading-5">
+                                                            {option.description}
                                                         </p>
-                                                    </div>
-
-                                                    <span className="px-3 py-2 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold w-fit">
-                                                        {selectedUnitIds.length} Selected
-                                                    </span>
-                                                </div>
-
-                                                {loadingUnits ? (
-                                                    <div className="p-8 text-center border border-slate-200 rounded-xl">
-                                                        <p className="text-sm text-slate-500">
-                                                            Loading available devices...
-                                                        </p>
-                                                    </div>
-                                                ) : !formData.stockItemId ? (
-                                                    <div className="p-8 text-center border border-dashed border-slate-300 rounded-xl">
-                                                        <p className="text-sm text-slate-400">
-                                                            Please select a product first.
-                                                        </p>
-                                                    </div>
-                                                ) : availableUnits.length === 0 ? (
-                                                    <div className="p-8 text-center bg-orange-50 border border-orange-100 rounded-xl">
-                                                        <p className="text-sm font-semibold text-orange-700">
-                                                            No individually tracked available devices found.
-                                                        </p>
-
-                                                        <p className="text-xs text-orange-500 mt-2">
-                                                            Check whether this product has Stock Units with Available status.
-                                                        </p>
-                                                    </div>
-                                                ) : (
-                                                    <div className="border border-slate-200 rounded-xl overflow-hidden">
-
-                                                        <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-
-                                                            <span className="text-xs font-bold text-slate-600">
-                                                                Available Devices ({availableUnits.length})
-                                                            </span>
-
-                                                            <button
-                                                                type="button"
-                                                                onClick={handleSelectAllUnits}
-                                                                className="text-xs font-bold text-blue-600 hover:text-blue-700"
-                                                            >
-                                                                {selectedUnitIds.length === availableUnits.length
-                                                                    ? 'Deselect All'
-                                                                    : 'Select All'}
-                                                            </button>
-                                                        </div>
-
-                                                        <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
-
-                                                            {availableUnits.map((unit) => {
-                                                                const isSelected = selectedUnitIds.includes(unit._id);
-
-                                                                return (
-                                                                    <label
-                                                                        key={unit._id}
-                                                                        className={`flex items-center gap-4 p-4 cursor-pointer transition ${
-                                                                            isSelected
-                                                                                ? 'bg-blue-50'
-                                                                                : 'hover:bg-slate-50'
-                                                                        }`}
-                                                                    >
-
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={isSelected}
-                                                                            onChange={() => handleUnitSelection(unit._id)}
-                                                                            className="w-4 h-4 accent-blue-600"
-                                                                        />
-
-                                                                        <div className="flex-1 min-w-0">
-
-                                                                            <p className="text-sm font-bold text-slate-700">
-                                                                                {unit.serialNumber || 'Serial Number Not Provided'}
-                                                                            </p>
-
-                                                                            <p className="text-xs text-slate-400 mt-1">
-                                                                                Unit Code: {unit.unitCode || 'N/A'}
-                                                                            </p>
-
-                                                                        </div>
-
-                                                                        <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 font-bold">
-                                                                            Available
-                                                                        </span>
-
-                                                                    </label>
-                                                                );
-                                                            })}
-
-                                                        </div>
-
-                                                        <div className="p-4 bg-blue-50 border-t border-blue-100 flex justify-between items-center">
-
-                                                            <span className="text-sm font-semibold text-slate-600">
-                                                                Selected Quantity
-                                                            </span>
-
-                                                            <span className="text-lg font-bold text-blue-700">
-                                                                {selectedUnitIds.length} Devices
-                                                            </span>
-
-                                                        </div>
-                                                    </div>
-                                                )}
+                                                    </button>
+                                                ))}
                                             </div>
                                         </div>
 
@@ -1505,7 +1553,7 @@ const AssignmentManagement = () => {
                                                 </div>
 
                                                 <p className="text-xs text-slate-400 mt-2 ml-4">
-                                                    All assignments must belong to a department
+                                                    Complete receiver information before selecting products
                                                 </p>
                                             </div>
 
@@ -1679,6 +1727,497 @@ const AssignmentManagement = () => {
                                             </div>
                                         </div>
 
+                                        {/* PRODUCT SELECTION DASHBOARD */}
+                                        {receiverInfoComplete ? (
+                                            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-7">
+
+                                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="w-2 h-6 rounded-full bg-orange-500" />
+
+                                                            <h2 className="text-lg font-bold text-slate-800">
+                                                                Product Selection Dashboard
+                                                            </h2>
+                                                        </div>
+
+                                                        <p className="text-xs text-slate-400 mt-2 ml-4">
+                                                            Select product quantities using the plus, minus or quantity input
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <span className="px-4 py-2 rounded-xl bg-blue-50 text-blue-700 text-xs font-bold">
+                                                            {assignmentProducts.length} / {MAX_ASSIGNMENT_PRODUCTS} Products
+                                                        </span>
+
+                                                        <span className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold">
+                                                            {totalSelectedDevices} Total Devices
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 mb-6">
+                                                    <p className="text-sm font-semibold text-blue-900">
+                                                        How Product Selection Works
+                                                    </p>
+
+                                                    <p className="text-xs text-blue-700 mt-1 leading-5">
+                                                        Set the quantity for each product. Available stock units will be selected automatically. You can select up to 20 different product types in one assignment.
+                                                    </p>
+                                                </div>
+
+                                                {/* PRODUCT SEARCH AND STOCK FILTER */}
+                                                {stockItems.length > 0 && (
+                                                    <div className="mb-6 space-y-4">
+
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-slate-600 mb-2">
+                                                                Search Products
+                                                            </label>
+
+                                                            <div className="relative">
+                                                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg">
+                                                                    ⌕
+                                                                </span>
+
+                                                                <input
+                                                                    type="text"
+                                                                    value={productSearchTerm}
+                                                                    onChange={e => setProductSearchTerm(e.target.value)}
+                                                                    placeholder="Search by product name, SKU, brand or model..."
+                                                                    className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+                                                                />
+
+                                                                {productSearchTerm && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setProductSearchTerm('')}
+                                                                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 font-bold"
+                                                                        aria-label="Clear product search"
+                                                                    >
+                                                                        ✕
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        <div>
+                                                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                                                                <p className="text-xs font-bold text-slate-600">
+                                                                    Filter by Stock Availability
+                                                                </p>
+
+                                                                <p className="text-xs text-slate-400">
+                                                                    Showing {filteredStockItems.length} of {stockItems.length} products
+                                                                </p>
+                                                            </div>
+
+                                                            <div className="flex flex-wrap gap-2">
+
+                                                                {[
+                                                                    {
+                                                                        name: 'All',
+                                                                        count: productStockCounts.all,
+                                                                        active: 'bg-blue-600 text-white border-blue-600',
+                                                                        inactive: 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600'
+                                                                    },
+                                                                    {
+                                                                        name: 'In Stock',
+                                                                        count: productStockCounts.inStock,
+                                                                        active: 'bg-emerald-600 text-white border-emerald-600',
+                                                                        inactive: 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300 hover:text-emerald-600'
+                                                                    },
+                                                                    {
+                                                                        name: 'Low Stock',
+                                                                        count: productStockCounts.lowStock,
+                                                                        active: 'bg-amber-500 text-white border-amber-500',
+                                                                        inactive: 'bg-white text-slate-600 border-slate-200 hover:border-amber-300 hover:text-amber-600'
+                                                                    },
+                                                                    {
+                                                                        name: 'Out of Stock',
+                                                                        count: productStockCounts.outOfStock,
+                                                                        active: 'bg-red-600 text-white border-red-600',
+                                                                        inactive: 'bg-white text-slate-600 border-slate-200 hover:border-red-300 hover:text-red-600'
+                                                                    }
+                                                                ].map(filter => (
+                                                                    <button
+                                                                        key={filter.name}
+                                                                        type="button"
+                                                                        onClick={() => setProductStockFilter(filter.name)}
+                                                                        className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold transition ${
+                                                                            productStockFilter === filter.name
+                                                                                ? filter.active
+                                                                                : filter.inactive
+                                                                        }`}
+                                                                    >
+                                                                        {filter.name}
+
+                                                                        <span className={`min-w-6 h-6 px-1 rounded-lg flex items-center justify-center text-[10px] ${
+                                                                            productStockFilter === filter.name
+                                                                                ? 'bg-white/20 text-white'
+                                                                                : 'bg-slate-100 text-slate-600'
+                                                                        }`}>
+                                                                            {filter.count}
+                                                                        </span>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+
+                                                            <div className="flex flex-wrap gap-x-4 gap-y-2 mt-3 text-[11px] text-slate-400">
+                                                                <span>In Stock: More than {LOW_STOCK_THRESHOLD} pcs</span>
+                                                                <span>Low Stock: 1–{LOW_STOCK_THRESHOLD} pcs</span>
+                                                                <span>Out of Stock: 0 pcs</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {stockItems.length === 0 ? (
+                                                    <div className="p-10 text-center border border-dashed border-slate-300 rounded-xl">
+                                                        <div className="text-4xl mb-3">📦</div>
+                                                        <p className="font-bold text-slate-700">
+                                                            No Stock Products Found
+                                                        </p>
+                                                        <p className="text-xs text-slate-400 mt-2">
+                                                            Add products in Stock Inventory first.
+                                                        </p>
+                                                    </div>
+                                                ) : filteredStockItems.length === 0 ? (
+                                                    <div className="p-10 text-center border border-dashed border-slate-300 rounded-xl">
+                                                        <div className="text-4xl mb-3">🔎</div>
+
+                                                        <p className="font-bold text-slate-700">
+                                                            No Matching Products Found
+                                                        </p>
+
+                                                        <p className="text-xs text-slate-400 mt-2">
+                                                            Try another search term or stock filter.
+                                                        </p>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setProductSearchTerm('');
+                                                                setProductStockFilter('All');
+                                                            }}
+                                                            className="mt-4 px-4 py-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 text-xs font-bold transition"
+                                                        >
+                                                            Clear Product Filters
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+
+                                                        {filteredStockItems.map(product => {
+                                                            const selectedProduct = assignmentProducts.find(
+                                                                item => item.stockItemId === product._id
+                                                            );
+
+                                                            const quantity = selectedProduct?.quantity || 0;
+                                                            const availableQuantity = Math.max(
+                                                                0,
+                                                                Number(product.availableQuantity || 0)
+                                                            );
+
+                                                            const isLoading = loadingProductIds.includes(product._id);
+                                                            const isSelected = quantity > 0;
+                                                            const limitReached =
+                                                                !isSelected &&
+                                                                assignmentProducts.length >= MAX_ASSIGNMENT_PRODUCTS;
+
+                                                            return (
+                                                                <div
+                                                                    key={product._id}
+                                                                    className={`relative rounded-2xl border-2 p-5 transition-all duration-200 ${
+                                                                        isSelected
+                                                                            ? 'border-blue-500 bg-blue-50/60 shadow-md shadow-blue-100'
+                                                                            : 'border-slate-200 bg-white hover:border-blue-200 hover:shadow-md'
+                                                                    } ${
+                                                                        availableQuantity === 0
+                                                                            ? 'opacity-60'
+                                                                            : ''
+                                                                    }`}
+                                                                >
+
+                                                                    {isSelected && (
+                                                                        <span className="absolute top-3 right-3 w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
+                                                                            ✓
+                                                                        </span>
+                                                                    )}
+
+                                                                    <div className="pr-8">
+                                                                        <p className="text-base font-bold text-slate-800 leading-6">
+                                                                            {product.name}
+                                                                        </p>
+
+                                                                        <p className="text-xs text-slate-400 mt-2">
+                                                                            {product.brand || 'No Brand'}
+                                                                            {product.model ? ` · ${product.model}` : ''}
+                                                                        </p>
+                                                                    </div>
+
+                                                                    <div className="grid grid-cols-2 gap-3 mt-5">
+
+                                                                        <div className="bg-white rounded-xl border border-slate-100 p-3">
+                                                                            <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                                                                                SKU
+                                                                            </p>
+
+                                                                            <p className="text-xs font-semibold text-slate-700 mt-1 break-all">
+                                                                                {product.sku || 'N/A'}
+                                                                            </p>
+                                                                        </div>
+
+                                                                        <div className="bg-white rounded-xl border border-slate-100 p-3">
+                                                                            <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                                                                                Available
+                                                                            </p>
+
+                                                                            <p className={`text-lg font-bold mt-1 ${
+                                                                                availableQuantity > LOW_STOCK_THRESHOLD
+                                                                                    ? 'text-emerald-600'
+                                                                                    : availableQuantity > 0
+                                                                                        ? 'text-amber-600'
+                                                                                        : 'text-red-500'
+                                                                            }`}>
+                                                                                {availableQuantity}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="mt-5 pt-4 border-t border-slate-200">
+
+                                                                        <div className="flex items-center justify-between mb-3">
+                                                                            <span className="text-xs font-bold text-slate-600">
+                                                                                Select Quantity
+                                                                            </span>
+
+                                                                            <span className="text-[10px] font-semibold text-slate-400">
+                                                                                Max: {availableQuantity}
+                                                                            </span>
+                                                                        </div>
+
+                                                                        <div className="flex items-center gap-2">
+
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleDecreaseQuantity(product)}
+                                                                                disabled={
+                                                                                    quantity === 0 ||
+                                                                                    isLoading ||
+                                                                                    submitting
+                                                                                }
+                                                                                className="w-11 h-11 shrink-0 rounded-xl border border-slate-200 bg-white text-slate-700 text-xl font-bold hover:bg-red-50 hover:border-red-200 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                                                                            >
+                                                                                −
+                                                                            </button>
+
+                                                                            <input
+                                                                                type="number"
+                                                                                min="0"
+                                                                                max={availableQuantity}
+                                                                                value={quantity}
+                                                                                disabled={
+                                                                                    availableQuantity === 0 ||
+                                                                                    isLoading ||
+                                                                                    submitting
+                                                                                }
+                                                                                onChange={e =>
+                                                                                    handleProductQuantityChange(
+                                                                                        product,
+                                                                                        e.target.value
+                                                                                    )
+                                                                                }
+                                                                                className="w-full min-w-0 h-11 text-center rounded-xl border border-slate-200 bg-white text-lg font-bold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100"
+                                                                            />
+
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleIncreaseQuantity(product)}
+                                                                                disabled={
+                                                                                    quantity >= availableQuantity ||
+                                                                                    isLoading ||
+                                                                                    submitting ||
+                                                                                    limitReached
+                                                                                }
+                                                                                className="w-11 h-11 shrink-0 rounded-xl bg-blue-600 text-white text-xl font-bold hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                                                                            >
+                                                                                +
+                                                                            </button>
+                                                                        </div>
+
+                                                                        <div className="mt-3 flex justify-between items-center">
+                                                                            {isLoading ? (
+                                                                                <span className="text-xs text-blue-600 font-semibold">
+                                                                                    Loading stock units...
+                                                                                </span>
+                                                                            ) : availableQuantity === 0 ? (
+                                                                                <span className="text-xs text-red-500 font-semibold">
+                                                                                    Out of Stock
+                                                                                </span>
+                                                                            ) : availableQuantity <= LOW_STOCK_THRESHOLD ? (
+                                                                                <span className="text-xs text-amber-600 font-semibold">
+                                                                                    Low Stock
+                                                                                </span>
+                                                                            ) : isSelected ? (
+                                                                                <span className="text-xs text-emerald-600 font-semibold">
+                                                                                    ✓ Added to Assignment
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className="text-xs text-slate-400">
+                                                                                    Not Selected
+                                                                                </span>
+                                                                            )}
+
+                                                                            {isSelected && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleRemoveProduct(product._id)}
+                                                                                    className="text-xs font-bold text-red-500 hover:text-red-700"
+                                                                                >
+                                                                                    Remove
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+
+                                                {/* SELECTED PRODUCTS SUMMARY */}
+                                                <div className="mt-8 border-t border-slate-200 pt-6">
+
+                                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+                                                        <div>
+                                                            <h3 className="text-base font-bold text-slate-800">
+                                                                Selected Products Summary
+                                                            </h3>
+
+                                                            <p className="text-xs text-slate-400 mt-1">
+                                                                Review all selected products before confirming
+                                                            </p>
+                                                        </div>
+
+                                                        <div className="flex gap-2">
+                                                            <span className="px-3 py-2 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold">
+                                                                {assignmentProducts.length} Product Types
+                                                            </span>
+
+                                                            <span className="px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold">
+                                                                {totalSelectedDevices} Devices
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    {assignmentProducts.length === 0 ? (
+                                                        <div className="p-8 text-center border border-dashed border-slate-300 rounded-xl">
+                                                            <div className="text-3xl mb-3">🛒</div>
+
+                                                            <p className="text-sm font-semibold text-slate-600">
+                                                                No Products Selected
+                                                            </p>
+
+                                                            <p className="text-xs text-slate-400 mt-2">
+                                                                Increase the quantity of any product above to add it to this assignment.
+                                                            </p>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                                                            <table className="w-full min-w-[650px] text-left">
+
+                                                                <thead>
+                                                                    <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-500">
+                                                                        <th className="p-4">#</th>
+                                                                        <th className="p-4">Product Details</th>
+                                                                        <th className="p-4">SKU</th>
+                                                                        <th className="p-4 text-center">Quantity</th>
+                                                                        <th className="p-4 text-center">Action</th>
+                                                                    </tr>
+                                                                </thead>
+
+                                                                <tbody>
+                                                                    {assignmentProducts.map((item, index) => (
+                                                                        <tr
+                                                                            key={item.stockItemId}
+                                                                            className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
+                                                                        >
+                                                                            <td className="p-4 text-xs font-bold text-slate-500">
+                                                                                {index + 1}
+                                                                            </td>
+
+                                                                            <td className="p-4">
+                                                                                <p className="text-sm font-bold text-slate-800">
+                                                                                    {item.productDetails.name}
+                                                                                </p>
+
+                                                                                <p className="text-xs text-slate-400 mt-1">
+                                                                                    {item.productDetails.brand || 'No Brand'}
+                                                                                    {item.productDetails.model
+                                                                                        ? ` · ${item.productDetails.model}`
+                                                                                        : ''}
+                                                                                </p>
+                                                                            </td>
+
+                                                                            <td className="p-4 text-xs text-slate-500">
+                                                                                {item.productDetails.sku || 'N/A'}
+                                                                            </td>
+
+                                                                            <td className="p-4 text-center">
+                                                                                <span className="inline-flex min-w-10 justify-center px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-sm font-bold">
+                                                                                    {item.quantity}
+                                                                                </span>
+                                                                            </td>
+
+                                                                            <td className="p-4 text-center">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleRemoveProduct(item.stockItemId)}
+                                                                                    className="px-3 py-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 text-xs font-bold transition"
+                                                                                >
+                                                                                    Remove
+                                                                                </button>
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+
+                                                                <tfoot>
+                                                                    <tr className="bg-blue-50">
+                                                                        <td colSpan="3" className="p-4 text-sm font-bold text-slate-700 text-right">
+                                                                            Total Devices
+                                                                        </td>
+
+                                                                        <td className="p-4 text-center text-base font-bold text-blue-700">
+                                                                            {totalSelectedDevices}
+                                                                        </td>
+
+                                                                        <td />
+                                                                    </tr>
+                                                                </tfoot>
+                                                            </table>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="bg-white rounded-2xl border border-dashed border-blue-300 shadow-sm p-8 sm:p-10 text-center">
+                                                <div className="w-16 h-16 mx-auto rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-3xl mb-4">
+                                                    📦
+                                                </div>
+
+                                                <h3 className="text-base font-bold text-slate-700">
+                                                    Product Selection Dashboard
+                                                </h3>
+
+                                                <p className="text-sm text-slate-400 mt-2 max-w-lg mx-auto">
+                                                    First complete the Department, Receiver Name and Assignment Date. For Room Assignment, select the Floor Level and Room Number too.
+                                                </p>
+                                            </div>
+                                        )}
+
                                         {/* NOTES */}
                                         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-7">
 
@@ -1722,14 +2261,15 @@ const AssignmentManagement = () => {
                                                 disabled={
                                                     submitting ||
                                                     loadingUnits ||
-                                                    !selectedProduct ||
-                                                    selectedUnitIds.length === 0
+                                                    loadingProductIds.length > 0 ||
+                                                    assignmentProducts.length === 0 ||
+                                                    !receiverInfoComplete
                                                 }
                                                 className="px-7 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-lg shadow-blue-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                                 {submitting
                                                     ? 'Processing Assignment...'
-                                                    : `✓ Confirm Assignment (${selectedUnitIds.length})`}
+                                                    : `✓ Confirm Assignment (${assignmentProducts.length} Products / ${totalSelectedDevices} Devices)`}
                                             </button>
                                         </div>
                                     </form>
@@ -1969,14 +2509,19 @@ const AssignmentManagement = () => {
                                                                         </span>
                                                                     </td>
 
-                                                                    <td className="py-4 px-4">
-                                                                        <p className="text-sm font-bold text-slate-700">
-                                                                            {item.productDetails?.name || item.stockItem?.name || 'N/A'}
-                                                                        </p>
+                                                                    <td className="py-4 px-4 max-w-[280px]">
+                                                                        {getAssignmentItems(item).map((product, index) => (
+                                                                            <div key={product.stockItem?._id || product.stockItem || index} className="mb-2 last:mb-0">
+                                                                                <p className="text-sm font-bold text-slate-700">
+                                                                                    {getProductName(product)}
+                                                                                </p>
 
-                                                                        <p className="text-[11px] text-slate-400 mt-1">
-                                                                            SKU: {item.productDetails?.sku || item.stockItem?.sku || 'N/A'}
-                                                                        </p>
+                                                                                <p className="text-[11px] text-slate-400 mt-1">
+                                                                                    SKU: {product.productDetails?.sku || product.stockItem?.sku || 'N/A'}
+                                                                                    {' · '}Qty: {product.quantity || product.stockUnits?.length || 0}
+                                                                                </p>
+                                                                            </div>
+                                                                        ))}
                                                                     </td>
 
                                                                     <td className="py-4 px-4">
@@ -2029,7 +2574,7 @@ const AssignmentManagement = () => {
 
                                                                     <td className="py-4 px-4">
                                                                         <span className="inline-flex min-w-9 justify-center px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold">
-                                                                            {item.quantity}
+                                                                            {getAssignmentQuantity(item)}
                                                                         </span>
                                                                     </td>
 
@@ -2216,11 +2761,11 @@ const AssignmentManagement = () => {
                                             </p>
                                         ) : (
                                             <div className="overflow-x-auto">
-                                                <table className="w-full min-w-[900px] text-left">
+                                                <table className="w-full min-w-[1000px] text-left">
                                                     <thead>
                                                         <tr className="border-b border-slate-100 text-xs text-slate-400 uppercase">
                                                             <th className="py-3 px-3">Assignment ID</th>
-                                                            <th className="py-3 px-3">Product</th>
+                                                            <th className="py-3 px-3">Products</th>
                                                             <th className="py-3 px-3">Department</th>
                                                             <th className="py-3 px-3">Location</th>
                                                             <th className="py-3 px-3">Receiver</th>
@@ -2237,8 +2782,15 @@ const AssignmentManagement = () => {
                                                                     {item.assignmentId}
                                                                 </td>
 
-                                                                <td className="py-4 px-3 text-sm text-slate-700">
-                                                                    {item.productDetails?.name || item.stockItem?.name || 'N/A'}
+                                                                <td className="py-4 px-3 text-sm text-slate-700 max-w-[280px]">
+                                                                    {getAssignmentItems(item).map((product, index) => (
+                                                                        <p key={product.stockItem?._id || product.stockItem || index} className="mb-1 last:mb-0">
+                                                                            {getProductName(product)}
+                                                                            <span className="text-xs text-slate-400">
+                                                                                {' '}× {product.quantity || product.stockUnits?.length || 0}
+                                                                            </span>
+                                                                        </p>
+                                                                    ))}
                                                                 </td>
 
                                                                 <td className="py-4 px-3 text-sm text-slate-600">
@@ -2260,7 +2812,7 @@ const AssignmentManagement = () => {
                                                                 </td>
 
                                                                 <td className="py-4 px-3 text-sm font-bold text-slate-700">
-                                                                    {item.quantity}
+                                                                    {getAssignmentQuantity(item)}
                                                                 </td>
 
                                                                 <td className="py-4 px-3 text-xs text-slate-500">
@@ -2332,61 +2884,61 @@ const AssignmentManagement = () => {
                     </div>
 
                     <h3 className="font-bold border-b border-black pb-2 mb-3">
-                        PRODUCT DETAILS
+                        ASSIGNED PRODUCT DETAILS
                     </h3>
 
                     <table className="w-full text-sm border-collapse mb-7">
+                        <thead>
+                            <tr>
+                                <th className="border border-black p-2 text-left">#</th>
+                                <th className="border border-black p-2 text-left">Product Name</th>
+                                <th className="border border-black p-2 text-left">Brand</th>
+                                <th className="border border-black p-2 text-left">Model</th>
+                                <th className="border border-black p-2 text-left">SKU</th>
+                                <th className="border border-black p-2 text-left">Quantity</th>
+                            </tr>
+                        </thead>
+
                         <tbody>
-                            <tr>
-                                <td className="border border-black p-3 font-bold w-1/3">
-                                    Product Name
-                                </td>
+                            {getAssignmentItems(printAssignment).map((product, index) => (
+                                <tr key={product.stockItem?._id || product.stockItem || index}>
+                                    <td className="border border-black p-2">
+                                        {index + 1}
+                                    </td>
 
-                                <td className="border border-black p-3">
-                                    {printAssignment.productDetails?.name || printAssignment.stockItem?.name || 'N/A'}
-                                </td>
-                            </tr>
+                                    <td className="border border-black p-2">
+                                        {getProductName(product)}
+                                    </td>
 
-                            <tr>
-                                <td className="border border-black p-3 font-bold">
-                                    Brand
-                                </td>
+                                    <td className="border border-black p-2">
+                                        {product.productDetails?.brand || product.stockItem?.brand || 'N/A'}
+                                    </td>
 
-                                <td className="border border-black p-3">
-                                    {printAssignment.productDetails?.brand || 'N/A'}
-                                </td>
-                            </tr>
+                                    <td className="border border-black p-2">
+                                        {product.productDetails?.model || product.stockItem?.model || 'N/A'}
+                                    </td>
 
-                            <tr>
-                                <td className="border border-black p-3 font-bold">
-                                    Model
-                                </td>
+                                    <td className="border border-black p-2">
+                                        {product.productDetails?.sku || product.stockItem?.sku || 'N/A'}
+                                    </td>
 
-                                <td className="border border-black p-3">
-                                    {printAssignment.productDetails?.model || 'N/A'}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td className="border border-black p-3 font-bold">
-                                    SKU
-                                </td>
-
-                                <td className="border border-black p-3">
-                                    {printAssignment.productDetails?.sku || 'N/A'}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td className="border border-black p-3 font-bold">
-                                    Quantity
-                                </td>
-
-                                <td className="border border-black p-3">
-                                    {printAssignment.quantity}
-                                </td>
-                            </tr>
+                                    <td className="border border-black p-2">
+                                        {product.quantity || product.stockUnits?.length || product.assets?.length || 0}
+                                    </td>
+                                </tr>
+                            ))}
                         </tbody>
+
+                        <tfoot>
+                            <tr>
+                                <td colSpan="5" className="border border-black p-2 text-right font-bold">
+                                    Total Devices
+                                </td>
+                                <td className="border border-black p-2 font-bold">
+                                    {getAssignmentQuantity(printAssignment)}
+                                </td>
+                            </tr>
+                        </tfoot>
                     </table>
 
                     <h3 className="font-bold border-b border-black pb-2 mb-3">
@@ -2396,40 +2948,46 @@ const AssignmentManagement = () => {
                     <table className="w-full text-sm border-collapse mb-7">
                         <thead>
                             <tr>
-                                <th className="border border-black p-3 text-left">
-                                    #
-                                </th>
-
-                                <th className="border border-black p-3 text-left">
-                                    Asset ID
-                                </th>
-
-                                <th className="border border-black p-3 text-left">
-                                    Serial Number
-                                </th>
+                                <th className="border border-black p-2 text-left">#</th>
+                                <th className="border border-black p-2 text-left">Product</th>
+                                <th className="border border-black p-2 text-left">Asset ID</th>
+                                <th className="border border-black p-2 text-left">Serial Number</th>
+                                <th className="border border-black p-2 text-left">Unit Code</th>
                             </tr>
                         </thead>
 
                         <tbody>
-                            {(printAssignment.assets || []).map((asset, index) => (
-                                <tr key={asset._id || index}>
-                                    <td className="border border-black p-3">
-                                        {index + 1}
-                                    </td>
+                            {getAssignmentItems(printAssignment).flatMap((product, productIndex) => (
+                                (product.assets || []).map((asset, assetIndex) => (
+                                    <tr key={asset._id || `${productIndex}-${assetIndex}`}>
+                                        <td className="border border-black p-2">
+                                            {productIndex + 1}.{assetIndex + 1}
+                                        </td>
 
-                                    <td className="border border-black p-3">
-                                        {asset.assetId || 'N/A'}
-                                    </td>
+                                        <td className="border border-black p-2">
+                                            {getProductName(product)}
+                                        </td>
 
-                                    <td className="border border-black p-3">
-                                        {asset.serialNumber || 'N/A'}
-                                    </td>
-                                </tr>
+                                        <td className="border border-black p-2">
+                                            {asset.assetId || 'N/A'}
+                                        </td>
+
+                                        <td className="border border-black p-2">
+                                            {asset.serialNumber || 'N/A'}
+                                        </td>
+
+                                        <td className="border border-black p-2">
+                                            {asset.stockUnit?.unitCode || 'N/A'}
+                                        </td>
+                                    </tr>
+                                ))
                             ))}
 
-                            {(!printAssignment.assets || printAssignment.assets.length === 0) && (
+                            {!getAssignmentItems(printAssignment).some(
+                                product => product.assets?.length > 0
+                            ) && (
                                 <tr>
-                                    <td colSpan="3" className="border border-black p-3 text-center">
+                                    <td colSpan="5" className="border border-black p-3 text-center">
                                         No device details available in this assignment record.
                                     </td>
                                 </tr>

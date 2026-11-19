@@ -124,7 +124,7 @@ const AdminSidebar = () => {
             <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="fixed left-4 top-4 z-30 flex h-10 w-10 items-center justify-center rounded-xl bg-[#101d36] text-xl text-white shadow-lg lg:hidden"
+                className="fixed left-4 top-4 z-30 flex h-10 w-10 items-center justify-center rounded-xl bg-[#101d36] text-xl text-white shadow-lg ring-1 ring-orange-500/30 transition-colors hover:bg-orange-600 lg:hidden"
                 aria-label="Open sidebar"
             >
                 ☰
@@ -142,14 +142,14 @@ const AdminSidebar = () => {
 
             {/* ADMIN SIDEBAR */}
             <aside
-                className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-[#101d36] text-white transition-transform duration-300 ${
+                className={`fixed inset-y-0 left-0 z-50 flex h-screen w-64 flex-col overflow-y-auto overscroll-contain bg-[#101d36] text-white shadow-xl transition-transform duration-300 ${
                     sidebarOpen ? 'translate-x-0' : '-translate-x-full'
                 } lg:translate-x-0`}
             >
                 {/* SIDEBAR LOGO */}
-                <div className="border-b border-blue-900/60 px-6 py-6">
+                <div className="shrink-0 border-b border-orange-500/20 px-6 py-6">
                     <div className="flex items-center gap-3">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-xl font-bold text-white">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-500 text-xl font-bold text-white shadow-lg shadow-orange-500/20">
                             U
                         </div>
 
@@ -158,7 +158,7 @@ const AdminSidebar = () => {
                                 UMC IT PORTAL
                             </h2>
 
-                            <p className="mt-1 whitespace-nowrap text-xs text-blue-200/70">
+                            <p className="mt-1 whitespace-nowrap text-xs text-orange-200/70">
                                 Inventory Management
                             </p>
                         </div>
@@ -166,8 +166,8 @@ const AdminSidebar = () => {
                 </div>
 
                 {/* SIDEBAR NAVIGATION */}
-                <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-6">
-                    <p className="mb-4 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-blue-300/60">
+                <nav className="shrink-0 space-y-2 px-4 py-6">
+                    <p className="mb-4 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-300/70">
                         Main Menu
                     </p>
 
@@ -182,12 +182,12 @@ const AdminSidebar = () => {
                                 aria-current={isActive ? 'page' : undefined}
                                 className={`relative flex w-full items-center gap-3 overflow-hidden whitespace-nowrap rounded-xl px-4 py-3 text-left text-sm font-medium transition-colors duration-200 ${
                                     isActive
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-transparent text-slate-300 hover:bg-blue-900/60 hover:text-white'
+                                        ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20'
+                                        : 'bg-transparent text-slate-300 hover:bg-orange-500/15 hover:text-orange-200'
                                 }`}
                             >
                                 {isActive && (
-                                    <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-white/90" />
+                                    <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-white" />
                                 )}
 
                                 <span className="flex w-6 shrink-0 items-center justify-center text-lg">
@@ -203,9 +203,9 @@ const AdminSidebar = () => {
                 </nav>
 
                 {/* USER PROFILE & LOGOUT */}
-                <div className="mt-auto border-t border-blue-900/60 p-5">
-                    <div className="mb-4 flex items-center gap-3 rounded-xl bg-blue-900/30 p-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-lg font-bold">
+                <div className="mt-auto shrink-0 border-t border-orange-500/20 p-5">
+                    <div className="mb-4 flex items-center gap-3 rounded-xl border border-orange-500/10 bg-orange-500/10 p-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-500 text-lg font-bold text-white">
                             {user?.name?.charAt(0) || 'A'}
                         </div>
 
@@ -214,7 +214,7 @@ const AdminSidebar = () => {
                                 {user?.name || 'Administrator'}
                             </p>
 
-                            <p className="truncate text-xs text-blue-200/60">
+                            <p className="truncate text-xs text-orange-200/60">
                                 {user?.email || 'Full Access'}
                             </p>
                         </div>
@@ -225,7 +225,7 @@ const AdminSidebar = () => {
                     <button
                         type="button"
                         onClick={handleLogout}
-                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-300 transition-colors duration-200 hover:bg-red-500 hover:text-white"
+                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-orange-400/30 bg-orange-500/10 px-4 py-3 text-sm font-semibold text-orange-300 transition-colors duration-200 hover:border-orange-500 hover:bg-orange-500 hover:text-white"
                     >
                         <span>↪</span>
                         Logout
